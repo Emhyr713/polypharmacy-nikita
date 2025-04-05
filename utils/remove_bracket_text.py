@@ -16,8 +16,8 @@ def remove_brackets_deep(text):
     return result
 
 def remove_brackets(text):
-    # Удаление круглых, квадратных и фигурных скобок с содержимым
-    text = re.sub(r'\(.*?\)', '', text)  # Удаляет круглые скобки
-    text = re.sub(r'\[.*?\]', '', text)  # Удаляет квадратные скобки
-    text = re.sub(r'\{.*?\}', '', text)  # Удаляет фигурные скобки
+    # Удаление круглых, квадратных и фигурных скобок с содержимым, включая \n
+    text = re.sub(r'\(.*?\)', '', text, flags=re.DOTALL)  # Удаляет круглые скобки
+    text = re.sub(r'\[.*?\]', '', text, flags=re.DOTALL)  # Удаляет квадратные скобки
+    text = re.sub(r'\{.*?\}', '', text, flags=re.DOTALL)  # Удаляет фигурные скобки
     return text

@@ -2,3 +2,7 @@
 /data/Инструкции_ГРЛС_не_вкладыши_не_сканы_2
 /utils/__pycache__
 /.vscode
+/extract_text_from_instructions/data/Инструкции_txt
+/process_yEd_graph/data/graph_yEd_processed_1
+/process_yEd_graph/data/graph_yEd_raw_1
+/process_yEd_graph/data/graph_yEd_raw_2

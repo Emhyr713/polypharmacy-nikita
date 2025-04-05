@@ -8,16 +8,34 @@ sys.path.append("")
 from utils.fetch_url_page import fetch_page_with_retries
 from utils.extract_text_from_pdf import extract_text_from_pdf
 from utils.remove_bracket_text import remove_brackets, remove_brackets_deep
+from utils.translate_by_dictionary import translate
 
-
-LINKS_SIDE_EFFECT_FILENAME = "make_side_effect_dataset\\data\\drugs_table3.csv"
+LINKS_SIDE_EFFECT_FILENAME = "make_side_effect_dataset\\data\\drugs_table4.csv"
 INSTRUCTION_DIR = "data\\Инструкции_ГРЛС_не_вкладыши_не_сканы_"
 DIR_LIST_CLASS_SIDE_E = "make_side_effect_dataset\\data\\list_class_side_e_edit.txt"
-
+TRANSLATE_DICT = "make_side_effect_dataset\\data\\side_effects_dict_translation.json"
 
 class fetch_pdf_or_rlsnet_side_effects():
     def __init__(self):
-        pass
+        self.translate_dict = self.load_json(TRANSLATE_DICT)
+    
+    def clear_text(self, text):
+        text = text.replace("\r\n", " ")
+        text = text.replace("\xa0", " ")
+        text = re.sub(r"\(см\.[^)]*\)", "", text)
+        text = remove_brackets(text)
+        text = text.replace("*", "")
+        text = text.replace("§", "")
+        text = re.sub(r'\s*/\s*', '/', text)
+        text = re.sub(r'\s*:\s*', ':', text)
+        text = re.sub(r',\s*$', '', text)
+        text = re.sub(r'[^\S\n]+', ' ', text)
+        return text
+    
+    def load_json(self, filename):
+        with open(filename, "r", encoding="utf-8") as file:
+            translations = json.load(file)
+        return translations
 
     def _get_side_effects_rlsnet_text(self, url_part: str) -> dict:
         """Извлекает текст о побочных эффектах с сайта rlsnet.ru."""
@@ -34,7 +52,7 @@ class fetch_pdf_or_rlsnet_side_effects():
         # Находим секцию с побочными эффектами
         effects_section = soup.find('h2', id=lambda x: x in ['pobocnye-deistviia', 'pobochnie-deistvia'])
         if not effects_section:
-            print("Не найдена секция с побочными эффектами")
+            print(f"Не найдена секция с побочными эффектами: {url}")
             return None
         
         for div in effects_section.find_next_siblings('div'):
@@ -47,12 +65,12 @@ class fetch_pdf_or_rlsnet_side_effects():
         if target_div:
             # Извлекаем текст с сохранением переносов строк
             effects_text = target_div.get_text(separator='\n', strip=True)
-            # effects_text = effects_text.replace("\r\n", " ")
-            # effects_text = effects_text.replace(r"\s+", " ")
         else:
             print(f"Не найден div с нужным стилем: {url}")
             return None
         
+        effects_text = self.clear_text(effects_text)
+
         return effects_text
     
     def _get_side_effects_instruction_text(self, pdf_path):
@@ -71,17 +89,12 @@ class fetch_pdf_or_rlsnet_side_effects():
 
         if match_side_e:
             text_main = match_side_e.group(2).strip()
-            text_main = re.sub(r"\(см\.[^)]*\)", "", text_main)
-
+            text_main = self.clear_text(text_main)
             return text_main
         else:
             return None
     
     def split_text_by_side_effects(self, text, side_e_class_list):
-
-        text = text.replace("\r\n", " ")
-        text = text.replace(r"\s+", " ")
-        text = text.replace("\xa0", " ")
 
         # Этап 1: Разделение текста на главы
         pattern = r"^(" + "|".join(re.escape(s) for s in side_e_class_list) + r")\s*"
@@ -96,6 +109,10 @@ class fetch_pdf_or_rlsnet_side_effects():
                 part = part.replace("\n", " ").strip()  # Убираем символы новой строки из заголовков
                 
                 if not part:
+                    continue
+                
+                # Пропускаем, если заголовок уже существует
+                if part in sections:
                     continue
                 
                 # Если часть совпадает с заголовком, создаем новую главу
@@ -139,20 +156,15 @@ class fetch_pdf_or_rlsnet_side_effects():
 
                     # Внутренности подзаголовка
                     elif sub_section is not None:
-
-                        sub_part = sub_part.replace("*", "")
-                        sub_part = sub_part.replace("§", "")
                         sub_part = sub_part.split(".")[0]  # Разделяем по точке и оставляем первую часть
 
-                        # sub_part = remove_nested_brackets(sub_part)
-
                         # Удаляем числа и символы (например, ";") в конце строки
-                        sub_part = re.sub(r'\s*\d+[\;]?\s*$|[\;\s]+$', '', sub_part)
+                        sub_part = re.sub(r'\s*\d+[\;]?\s*$|[\;\s\)]+$', '', sub_part)
 
                         sub_part_list = [
-                            re.sub(r'\s*\d+$', '', re.sub(r'^[\-\:\–\—]+\s*', '', item.strip()))  # Удаляем тире в начале и цифры в конце
+                            re.sub(r'\s*\d+$', '', re.sub(r'^[\-\:\–\—]+\s*', '', item)).strip()  # Удаляем тире в начале, цифры в конце и лишние пробелы
                             for item in re.split(r'[;,]\s*', sub_part)  # Разделяем по запятой и точке с запятой
-                            if item.strip() and not item.strip().isdigit()
+                            if item.strip() and not item.strip().isdigit() and not item.lstrip().startswith('в том числе')
                         ]
 
                         sub_section_content[sub_section] = sub_part_list
@@ -182,12 +194,17 @@ class fetch_pdf_or_rlsnet_side_effects():
         url = f"{prefix}{drug_name.lower()}{postfix}"       
                 
         soup = fetch_page_with_retries(url)
-        # soup = BeautifulSoup(response.content, 'html.parser')
 
         if not soup:
             return
+        
+        # Удаляем все теги <sup>
+        for sup in soup.find_all('sup'):
+            sup.decompose()
 
-        # drug_dict = {'drug_name_en':drug_name, }
+        # # Ищем все теги <a> и добавляем пробелы вокруг текста
+        # for a_tag in soup.find_all('a'):
+        #     a_tag.string = f" {a_tag.string} "  # Добавляем пробелы вокруг текста
 
         # Найти раздел "For Healthcare Professionals"
         professional_section = soup.find('h2', string='For healthcare professionals')
@@ -208,31 +225,28 @@ class fetch_pdf_or_rlsnet_side_effects():
                 current_category = element.get_text(strip=True)
                 if current_category == 'General adverse events':
                     continue
+                current_category = translate(self.translate_dict, current_category)
                 side_effects[current_category] = {}
+
             elif element.name == 'ul' and current_category:
                 for li in element.find_all('li'):
-                    # print(li)
-                    full_text = li.get_text(separator='', strip=True)
-                    full_text = remove_brackets(full_text)
-                    full_text = extract_frequency_and_effect(li.get_text(separator='', strip=True))
-
-                    # print(full_text)
+                    full_text = li.get_text(separator=' ', strip=True)
+                    full_text = self.clear_text(full_text)
+                    full_text = full_text.lower()
+                    full_text = extract_frequency_and_effect(full_text)
 
                     if full_text:
                         frequency, effects = full_text
-                        # frequency = remove_brackets(frequency)
-                        frequency = re.sub(r'\(.*?\)', '', frequency)
+
+                        # Перевод частоты
+                        frequency = translate(self.translate_dict, frequency)
+
                         if frequency not in side_effects[current_category]:  
-                            side_effects[current_category][frequency] = []  # Инициализация списка
+                            side_effects[current_category][frequency] = []
 
-                        # Обработка effects
-                        # effects = re.sub(r'\[.*?\]', '', effects)               # Удаляет содержимое в квадратных скобках
-                        # effects = re.sub(r'\(.*?\)', '', effects)
-                        # effects = remove_brackets(effects)
-                        effects = effects.lower()                               # Понижение регистра
-                        effect_list = [effect.strip() for effect in effects.split(",")]
+                        effect_list = [translate(self.translate_dict, effect.strip()).lower() for effect in effects.split(",")]
 
-                        side_effects[current_category][frequency].append(effect_list)
+                        side_effects[current_category][frequency].extend(effect_list)
 
         return side_effects
     
@@ -255,10 +269,11 @@ if __name__ == "__main__":
 
     fetcher = fetch_pdf_or_rlsnet_side_effects()
 
-    for row in tqdm(reader, total=total_rows, desc="Обработка данных", unit="строка"):
+    for row in reader:
+    # for row in tqdm(reader, total=total_rows, desc="Обработка данных", unit="строка"):
         drug_name_ru = row.get('drug_name_ru', '').strip()
         drug_name_en = row.get('drug_name_en', '').strip()
-        stage = row.get('drug_name_en', '').strip()
+        stage = row.get('stage', '').strip()
 
         pdf_filename = row.get('pdf_filename', '').strip()
         drugscom_link = row.get('drugscom_link', '').strip()  
@@ -271,11 +286,12 @@ if __name__ == "__main__":
 
         # 1 этап. Извлечение из инструкций
         if pdf_filename and pdf_filename != 'None':
-            pdf_path = f"{INSTRUCTION_DIR}{stage}\\{pdf_filename}"
+            pdf_path = f"{INSTRUCTION_DIR}{stage}\\{pdf_filename}.pdf"
             result["source"] = pdf_path
             result["text"] = fetcher._get_side_effects_instruction_text(pdf_path)
             result["side_e_parts"] = fetcher.split_text_by_side_effects(result["text"], side_e_class)
 
+        # 2 этап. Извлечение из rlsnet
         elif rlsnet_link and rlsnet_link != 'None':
             rls_url = f"https://www.rlsnet.ru{rlsnet_link}"
             result["source"] = rls_url
@@ -283,7 +299,7 @@ if __name__ == "__main__":
             if text:
                 result["text"] = fetcher._get_side_effects_rlsnet_text(rlsnet_link)
                 result["side_e_parts"] = fetcher.split_text_by_side_effects(result["text"], side_e_class)
-
+        # 3 этап. Извлечение из drugscom
         elif drugscom_link and drugscom_link != 'None':
             drugcom_url = f"https://www.drugs.com/sfx/{drugscom_link}-side-effects.html"      
             result["source"] = drugcom_url
