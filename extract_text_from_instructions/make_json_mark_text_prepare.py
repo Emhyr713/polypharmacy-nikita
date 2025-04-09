@@ -3,7 +3,7 @@ import os
 import sys
 sys.path.append("")
 
-from export_from_pdf import extract_pdf
+from extract_text_from_instructions.export_text_from_instructions import extract_text_pdf
 from utils.split_sent_razdel import split_format_text
 
 DIR_LIST_PDF = [
@@ -18,7 +18,7 @@ def main():
 
     for i, dir_pdf in enumerate(DIR_LIST_PDF):
         dir_pdf_list = [dir_pdf]
-        drug_jsones = extract_pdf(dir_pdf_list)
+        drug_jsones = extract_text_pdf(dir_pdf_list)
         for drug_json in drug_jsones:
             sent_list = split_format_text(drug_json['text']).split('\n')
             drug_json['sents_info'] = []

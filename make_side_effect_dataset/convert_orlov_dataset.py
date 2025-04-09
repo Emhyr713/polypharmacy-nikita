@@ -17,6 +17,7 @@ custom_morph = EnhancedMorphAnalyzer()
 DIR_INPUT = "make_side_effect_dataset\\data\\side_e_dataset.json"
 DIR_OUTPUT = "make_side_effect_dataset\\data\\sef_dataset.json"
 
+
 def load_dataset(filepath):
     """Загружает JSON-файл с датасетом."""
     if not os.path.exists(filepath):
@@ -42,15 +43,25 @@ def process_drug_data(dataset):
             "drug_name_en": drug["drug_name_en"],
             "side_e_parts": {},
         }
-
-        for effects_by_frequency in drug.get("side_e_parts", {}).values():
-            if isinstance(effects_by_frequency, dict):
-                for frequency, effect_list in effects_by_frequency.items():
-                    for effect in effect_list:
+        side_e_parts = drug.get("side_e_parts")
+        if side_e_parts:
+            for section, content in side_e_parts.items():
+                if isinstance(content, dict):
+                    # Структура: { "часто": [...], "редко": [...] }
+                    for freq, effects in content.items():
+                        for effect in effects:
+                            new_effect = custom_morph.lemmatize_string(effect.lower())
+                            drug_info["side_e_parts"][new_effect] = freq
+                elif isinstance(content, list):
+                    # Структура: просто список побочек без подзаголовков
+                    for effect in content:
                         new_effect = custom_morph.lemmatize_string(effect.lower())
+                        drug_info["side_e_parts"][new_effect] = "Частота неизвестна"
+                        # print(f"  - {effect}")
+                else:
+                    print(f"Неожиданный формат для '{section}': {type(content)}")
 
-                        # Записываем эффект в общий список без категорий
-                        drug_info["side_e_parts"][new_effect] = frequency
+
 
         processed_data[drug_name_ru] = drug_info
 
