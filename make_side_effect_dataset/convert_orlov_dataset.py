@@ -61,8 +61,6 @@ def process_drug_data(dataset):
                 else:
                     print(f"Неожиданный формат для '{section}': {type(content)}")
 
-
-
         processed_data[drug_name_ru] = drug_info
 
     return processed_data

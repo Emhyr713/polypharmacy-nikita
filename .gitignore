@@ -1,5 +1,3 @@
-/data/Инструкции_ГРЛС_не_вкладыши_не_сканы_1
-/data/Инструкции_ГРЛС_не_вкладыши_не_сканы_2
 /utils/__pycache__
 /.vscode
 /extract_text_from_instructions/data/Инструкции_txt
@@ -9,3 +7,6 @@
 dedoc_OCR
 /data/Инструкции_ГРЛС_1
 /data/Инструкции_ГРЛС_2
+/data/Инструкции_ГРЛС_1_scan
+/data/Инструкции_ГРЛС_2_scan
+*.zip

@@ -1,30 +1,43 @@
+import copy
 import csv
 import json
 import re
-from tqdm import tqdm
 import os
 import sys
 sys.path.append("")
 
-
 from utils.fetch_url_page import fetch_page_with_retries
 from utils.extract_text_from_pdf import extract_text_from_pdf
-from utils.remove_bracket_text import remove_brackets, remove_brackets_deep
+from utils.remove_bracket_text import remove_brackets
 from utils.translate_by_dictionary import translate
 
+from CustomPymorphy.CustomPymorphy import EnhancedMorphAnalyzer
+custom_morph = EnhancedMorphAnalyzer()
+
+# Пути файлов к данным
 LINKS_SIDE_EFFECT_FILENAME = "make_side_effect_dataset\\data\\drugs_table4.csv"
 INSTRUCTION_DIR_TEMPLATE = "data\\Инструкции_ГРЛС_"
 DIR_LIST_CLASS_SIDE_E = "make_side_effect_dataset\\data\\list_class_side_e_edit.txt"
 TRANSLATE_DICT = "make_side_effect_dataset\\data\\side_effects_dict_translation.json"
-JSONFILE_TEXT_INSTRUCTIONS_LIST = "extract_text_from_instructions\\data\\extracted_data_all.json"
+SYNONIM_DICT = ""
+
+# Пути сохранения
+SIDE_E_DATASET_FILENAME = 'make_side_effect_dataset\\data\\side_e_dataset.json'
+SIDE_E_FREQ_DATASET_FILENAME = 'make_side_effect_dataset\\data\\sef_dataset.json'
+SIDE_E_UNIQ_LIST = "make_side_effect_dataset\\data\\sef_uniq_list.txt"
 
 class fetch_pdf_or_rlsnet_side_effects():
-    def __init__(self):
-        self.translate_dict = self.load_json(TRANSLATE_DICT)
+    def __init__(self, translate_dict, side_e_class_list, synonim_dict=None):
+        self.translate_dict = translate_dict
+        self.side_e_class_list = sorted(side_e_class_list, key=len, reverse=True)
+        self.synonim_dict = synonim_dict
+
+        self.ND_drug = []
     
     def clear_text(self, text):
         text = text.replace("\r\n", " ")
         text = text.replace("\xa0", " ")
+        text = text.replace("ё", "е")
         text = re.sub(r"\(см\.[^)]*\)", "", text)
         text = remove_brackets(text)
         text = text.replace("*", "")
@@ -40,43 +53,6 @@ class fetch_pdf_or_rlsnet_side_effects():
         text = '\n'.join(lines)
         return text
     
-    # def extract_side_effect_headings(self, text):
-    #     """
-    #     Извлекает заголовки побочных эффектов на основе регулярных выражений.
-    #     """
-    #     compiled = [
-    #         re.compile(r'Со стороны [А-ЯЁа-яё0-9,\-\s]+'),
-    #         re.compile(r'Нарушения со стороны [А-ЯЁа-яё0-9,\-\s]+'),
-    #         re.compile(r'Нарушение со стороны [А-ЯЁа-яё0-9,\-\s]+'),
-    #         re.compile(r'Нарушения [А-ЯЁа-яё0-9,\-\s]+'),
-    #         re.compile(r'Нарушение [А-ЯЁа-яё0-9,\-\s]+'),
-    #         re.compile(r'Общее [А-ЯЁа-яё0-9,\-\s]+'),
-    #         re.compile(r'Общие [А-ЯЁа-яё0-9,\-\s]+'),
-    #         re.compile(r'[А-ЯЁа-яё]+ (расстройства|нарушения|реакции|инвазии|инфекции)'),
-    #         re.compile(r'^(Инфекции( и инвазии)?|Прочие( нарушения)?|Травмы, интоксикации и осложнения [А-ЯЁа-яё\s]+)$', re.MULTILINE),
-    #         re.compile(r'(Лабораторные|Результаты|Отклонения результатов) [А-ЯЁа-яё\s]+'),
-    #         re.compile(r'Доброкачественные, злокачественные и [А-ЯЁа-яё\s]+'),
-    #         re.compile(r'Врожденные, семейные и генетические [А-ЯЁа-яё\s]+'),
-    #         re.compile(r'(Сосудистые|Эндокринные|Неврологические) нарушения'),
-    #     ]
-
-    #     found = []
-    #     for pat in compiled:
-    #         matches = pat.findall(text)
-    #         for match in matches:
-    #             if isinstance(match, tuple):
-    #                 found.append(" ".join(part for part in match if part))
-    #             else:
-    #                 found.append(match)
-
-    #     return list(set(s.strip().replace('\n', ' ') for s in found))
-
-
-    def load_json(self, filename):
-        with open(filename, "r", encoding="utf-8") as file:
-            translations = json.load(file)
-        return translations
-
     def _get_side_effects_rlsnet_text(self, url_part: str) -> dict:
         """Извлекает текст о побочных эффектах с сайта rlsnet.ru."""
         url = "https://www.rlsnet.ru" + url_part
@@ -125,7 +101,6 @@ class fetch_pdf_or_rlsnet_side_effects():
             re.DOTALL
         )
 
-
         if match_side_e:
             text_main = match_side_e.group(2).strip()
             text_main = self.clear_text(text_main)
@@ -147,25 +122,17 @@ class fetch_pdf_or_rlsnet_side_effects():
                 print("Файл не найден:", path)
 
         elif stage in ("1_scan", "2_scan"):
-            if drug in scan_dict.get(stage, {}):
-                text_instruction = scan_dict[stage][drug]
+            if drug in scan_dict:
+                text_instruction = scan_dict[drug]
             else:
-                print("Не нашли drug в scan_dict[stage]")
+                print("Не нашли drug в scan_dict")
 
         return text_instruction
 
     def split_text_by_side_effects(self, text):
-
-        # Извлечение списка классов побочных эффектов
-        with open(DIR_LIST_CLASS_SIDE_E, "r", encoding="utf-8") as file:
-            side_e_class_list = [line.strip() for line in file if line.strip()]
-        side_e_class_list.sort(key=len, reverse=True)
-
-        # Автоматически извлечь заголовки
-        # side_e_class_list = self.extract_side_effect_headings(text)
         
         # Этап 1: Разделение текста на главы
-        pattern = r"^(" + "|".join(re.escape(s) for s in side_e_class_list) + r")\s*"
+        pattern = r"^(" + "|".join(re.escape(s) for s in self.side_e_class_list) + r")\s*"
         parts = re.split(pattern, text, flags=re.MULTILINE)
         
         sections = {}
@@ -184,7 +151,7 @@ class fetch_pdf_or_rlsnet_side_effects():
                     continue
                 
                 # Если часть совпадает с заголовком, создаем новую главу
-                if part in side_e_class_list:
+                if part in self.side_e_class_list:
                     current_section = part
                     sections[current_section] = ""
                 elif current_section is not None:
@@ -230,7 +197,7 @@ class fetch_pdf_or_rlsnet_side_effects():
 
                         sub_part_list = [
                             re.sub(r'\s*\d+$', '',  # Удаляем числа в конце
-                                re.sub(r'^[^a-zA-Zа-яА-ЯёЁ]+', '', item)  # Удаляем все не-буквы в начале
+                                re.sub(r'^[^a-zA-Zа-яА-ЯёЁ«»]+', '', item)  # Удаляем все не-буквы в начале
                             ).strip()
                             for item in re.split(r'[;,]\s*', sub_part)  # Разделяем по запятой и точке с запятой
                             if item.strip() and not item.strip().isdigit() and not item.lstrip().startswith('в том числе')
@@ -279,10 +246,6 @@ class fetch_pdf_or_rlsnet_side_effects():
         for sup in soup.find_all('sup'):
             sup.decompose()
 
-        # # Ищем все теги <a> и добавляем пробелы вокруг текста
-        # for a_tag in soup.find_all('a'):
-        #     a_tag.string = f" {a_tag.string} "  # Добавляем пробелы вокруг текста
-
         # Найти раздел "For Healthcare Professionals"
         professional_section = soup.find('h2', string='For healthcare professionals')
         if not professional_section:
@@ -327,6 +290,88 @@ class fetch_pdf_or_rlsnet_side_effects():
 
         return side_effects
     
+    @staticmethod
+    def process_drug_data(dataset):
+        """Обрабатывает данные о лекарствах и формирует новую структуру."""
+        processed_data = {}
+
+        for drug in dataset:
+            if not drug.get("source"):
+                continue  # Пропускаем записи без источника
+
+            drug_name_ru = drug["drug_name_ru"].lower()
+
+            # Новая структура данных
+            drug_info = {
+                "drug_name_en": drug["drug_name_en"],
+                "side_e_parts": {},
+            }
+            side_e_parts = drug.get("side_e_parts")
+            if side_e_parts:
+                for section, content in side_e_parts.items():
+                    if isinstance(content, dict):
+                        # Структура: { "часто": [...], "редко": [...] }
+                        for freq, effects in content.items():
+                            for effect in effects:
+                                new_effect = custom_morph.lemmatize_string(effect.lower())
+                                drug_info["side_e_parts"][new_effect] = freq
+                    elif isinstance(content, list):
+                        # Структура: просто список побочек без подзаголовков
+                        for effect in content:
+                            new_effect = custom_morph.lemmatize_string(effect.lower())
+                            drug_info["side_e_parts"][new_effect] = "Частота неизвестна"
+                            # print(f"  - {effect}")
+                    else:
+                        print(f"Неожиданный формат для '{section}': {type(content)}")
+
+            processed_data[drug_name_ru] = drug_info
+
+        return processed_data
+    
+    @staticmethod
+    def get_list_uniq_side_e(json_data):
+        uniq_set = set()
+
+        for drug, content in json_data.items():
+            for side_e in content['side_e_parts']:
+                uniq_set.add(custom_morph.lemmatize_string(side_e.lower()))
+
+        return sorted(uniq_set, key=len, reverse=True)
+    
+    def convert_side_e(self, side_e_dataset):
+        if self.synonim_dict is None:
+            print("Словарь не загружен")
+            return side_e_dataset
+        
+        # Глубокая копия всех вложенных структур
+        dataset_copy = copy.deepcopy(side_e_dataset)
+
+        convert_dict_map = {word: etalon_word for etalon_word, word in self.synonim_dict.items()}
+
+        for drug in dataset_copy:
+            if not drug.get("source"):
+                continue
+
+            side_e_parts = drug.get("side_e_parts")
+            if side_e_parts:
+                for section, content in side_e_parts.items():
+                    if isinstance(content, dict):
+                        for freq, effects in content.items():
+                            new_effects = []
+                            for effect in effects:
+                                new_effect = custom_morph.lemmatize_string(effect.lower())
+                                new_effects.append(convert_dict_map.get(new_effect, new_effect))
+                            drug["side_e_parts"][section][freq] = new_effects
+                    elif isinstance(content, list):
+                        new_effects = []
+                        for effect in content:
+                            new_effect = custom_morph.lemmatize_string(effect.lower())
+                            new_effects.append(convert_dict_map.get(new_effect, new_effect))
+                        drug["side_e_parts"][section] = new_effects
+                    else:
+                        print(f"Неожиданный формат для '{section}': {type(content)}")
+
+        return dataset_copy
 
 
 if __name__ == "__main__":
@@ -334,30 +379,30 @@ if __name__ == "__main__":
     side_e_dataset = []
 
     # Извлечение списка классов побочных эффектов
-    # with open(DIR_LIST_CLASS_SIDE_E, "r", encoding="utf-8") as file:
-    #     side_e_class = [line.strip() for line in file if line.strip()]
-    # side_e_class.sort(key=len, reverse=True)
+    with open(DIR_LIST_CLASS_SIDE_E, "r", encoding="utf-8") as file:
+        side_e_class = [line.strip() for line in file if line.strip()]
 
     # Читаем CSV-файл
     with open(LINKS_SIDE_EFFECT_FILENAME, newline='', encoding='utf-8') as csvfile:
         reader = list(csv.DictReader(csvfile, delimiter=';'))  # Читаем сразу весь файл
         total_rows = len(reader)
 
-    # Json файл с текстами инструкций сканов (переделать)
-    text_insructions_scan = {} 
+    # Извлечение словаря - переводчика
+    with open(TRANSLATE_DICT, "r", encoding="utf-8") as file:
+        translate_dict = json.load(file)
+
+    # Объединённый словарь инструкций из сканов
+    text_instructions_scan = {}
     with open("data\\Инструкции_ГРЛС_1_scan\\Инструкции_ГРЛС_1_scan.json", "r", encoding="utf-8") as file:
         load_data = json.load(file)
-        text_insructions_scan["1_scan"] = {item['drug']: item['text'] for item in load_data}
+        text_instructions_scan.update({item['drug']: item['text'] for item in load_data})
     with open("data\\Инструкции_ГРЛС_2_scan\\Инструкции_ГРЛС_2_scan.json", "r", encoding="utf-8") as file:
         load_data = json.load(file)
-        text_insructions_scan["2_scan"] = {item['drug']: item['text'] for item in load_data}
+        text_instructions_scan.update({item['drug']: item['text'] for item in load_data})
 
-    fetcher = fetch_pdf_or_rlsnet_side_effects()
-    # side_e_class = fetcher.extract_side_effect_headings()
-    # side_e_class.sort(key=len, reverse=True)
+    fetcher = fetch_pdf_or_rlsnet_side_effects(translate_dict, side_e_class)
 
     for row in reader:
-    # for row in tqdm(reader, total=total_rows, desc="Обработка данных", unit="строка"):
         drug_name_ru = row.get('drug_name_ru', '').strip()
         drug_name_en = row.get('drug_name_en', '').strip()
         stage = row.get('stage', '').strip()
@@ -366,14 +411,13 @@ if __name__ == "__main__":
         drugscom_link = row.get('drugscom_link', '').strip()  
         rlsnet_link = row.get('rlsnet_link', '').strip()
         
-        # fecth_side_e = fetch_pdf_or_rlsnet_side_effects()
         result = {"drug_name_ru": drug_name_ru,
                     "drug_name_en": drug_name_en,
                     "source":None,}
         
         # 1 этап. Извлечение из инструкций
         if pdf_filename and pdf_filename != 'None':
-            text_insructions = fetcher._extract_text_instruction(stage, pdf_filename, text_insructions_scan)
+            text_insructions = fetcher._extract_text_instruction(stage, pdf_filename, text_instructions_scan)
             if text_insructions is not None:
                 result["source"] = f"{INSTRUCTION_DIR_TEMPLATE}{stage}\\{pdf_filename}.pdf"
                 result["text"] = fetcher._get_side_effects_instruction_text(text_insructions)
@@ -392,6 +436,7 @@ if __name__ == "__main__":
             if text:
                 result["text"] = fetcher._get_side_effects_rlsnet_text(rlsnet_link)
                 result["side_e_parts"] = fetcher.split_text_by_side_effects(result["text"])
+
         # 3 этап. Извлечение из drugscom
         elif drugscom_link and drugscom_link != 'None':
             drugcom_url = f"https://www.drugs.com/sfx/{drugscom_link}-side-effects.html"      
@@ -400,10 +445,28 @@ if __name__ == "__main__":
             result["side_e_parts"] = fetcher.get_drugscom_side_e(drugscom_link)
 
         if not result["source"]:
+            fetcher.ND_drug.append(drug_name_ru)
             print("Нет источника побочных эффектов:", drug_name_ru)
         
         side_e_dataset.append(result)
 
+    # Замена побочек на побочку из словаря
+    side_e_dataset = fetcher.convert_side_e(side_e_dataset)
+
+    # Конвертация в вид Побочка -- Частота
+    sef_dataset = fetcher.process_drug_data(side_e_dataset)
+
+    # Извлечение уникальных побочных эффектов
+    sef_uniq_list = fetcher.get_list_uniq_side_e(sef_dataset)
+
     # Сохранить результаты в JSON-файл
-    with open(f'make_side_effect_dataset\\data\\side_e_dataset.json', 'w', encoding='utf-8') as f:
+    with open(SIDE_E_DATASET_FILENAME, 'w', encoding='utf-8') as f:
         json.dump(side_e_dataset, f, ensure_ascii=False, indent=4)
+
+    # Сохранить результаты в JSON-файл
+    with open(SIDE_E_FREQ_DATASET_FILENAME, 'w', encoding='utf-8') as f:
+        json.dump(sef_dataset, f, ensure_ascii=False, indent=4)
+
+    # Сохранить в текстовик
+    with open(SIDE_E_UNIQ_LIST, "w", encoding="utf-8") as file:
+        file.write("\n".join(sef_uniq_list))
