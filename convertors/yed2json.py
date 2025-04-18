@@ -78,8 +78,8 @@ class yEd2json:
         """
         G = nx.read_graphml(filename)
         
-        main_prepare = []  # Список узлов с тегом 'prepare', связанных с 'group'
-        mapping = {}  # Сопоставление старых узлов с новыми UUID
+        main_prepare = []           # Список узлов с тегом 'prepare', связанных с 'group'
+        mapping = {}                # Сопоставление старых узлов с новыми UUID
         G_for_json = nx.DiGraph()
         
         # Обход всех узлов и создание новых узлов с UUID

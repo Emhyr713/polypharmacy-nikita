@@ -1,6 +1,6 @@
 drug_name_ru;drug_name_en;stage;drugscom_link;drugscom_id;rlsnet_link;pdf_filename;
 Амиодарон;Amiodarone;1;amiodarone;None;/drugs/amiodaron-192;Амиодарон;
-Амлодипин;Amlodipine;1;amlodipine;172-0;/drugs/amlodipin-24511;None;
+Амлодипин+Периндоприл;Amlodipine+Perindopril;1;amlodipine;172-0;/drugs/amlodipin-24511;None;
 Апиксабан;Apixaban;1;apixaban;3438-0;None;Апиксабан_OCR;
 Ацетазоламид;Acetazolamide;1;acetazolamide;86-0;/drugs/acetazolamid-55682;Ацетазоламид;
 Ацетилсалициловая кислота;Acetylsalicylicacid;1;acetylsalicylic-acid;243-3224;/drugs/acetilsalicilovaia-kislota-182;Ацетилсалициловая кислота;
@@ -22,7 +22,7 @@ drug_name_ru;drug_name_en;stage;drugscom_link;drugscom_id;rlsnet_link;pdf_filena
 Карведилол;Carvedilol;1;carvedilol;531-0;None;Карведилол;
 Левосимендан;Levosimendan-nativ;1;None;None;/drugs/levosimendan-79151;Левосимендан;
 Лизиноприл;Lisinopril;1;lisinopril;1476-0;/drugs/lizinopril-25120;Лизиноприл;
-Линаглиптин;Linagliptin;1;linagliptin;None;None;None;
+Линаглиптин+Эмпаглифлозин;Linagliptin+Empagliflozin;1;linagliptin;None;None;None;
 Лозартан;Losartan;1;losartan;None;None;None;
 Метопролол;Metoprolol;1;metoprolol;1615-0;/drugs/metoprolol-1964;Метопролол;
 Метформин;Metformin;1;metformin;1573-0;/drugs/metformin-1982;Метформин;
@@ -76,7 +76,7 @@ drug_name_ru;drug_name_en;stage;drugscom_link;drugscom_id;rlsnet_link;pdf_filena
 Бромгексин;Bromhexine;2;None;None;/drugs/bromgeksin-8-34367;Бромгексин;
 Бромгексин+Гвайфенезин+Сальбутамол;Bromhexine+Guaifenesin+Salbutamol;2;None;None;None;None;
 Бутамират;Butyrate;2;None;None;/drugs/butamirat-80091;Бутамират;
-Имидазолилэтанамид пентандиовой кислоты;Imidazolylethanamideof pentanedioic acid;2;None;None;None;None;
+Имидазолилэтанамид пентандиовой кислоты;Imidazolylethanamide of pentanedioic acid;2;None;None;None;None;
 Интерферон альфа-2b;Interferon alpha-2b;2;None;None;/drugs/intron-a-6353;None;
 Тилорон;Tilorone;2;None;None;None;None;
 Умифеновир;Umifenovir;2;None;None;/drugs/umifenovir-80106;Умифеновир;

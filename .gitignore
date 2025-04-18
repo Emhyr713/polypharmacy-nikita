@@ -10,3 +10,8 @@ dedoc_OCR
 /data/Инструкции_ГРЛС_1_scan
 /data/Инструкции_ГРЛС_2_scan
 *.zip
+/convertors/__pycache__
+/process_yEd_graph/__pycache__
+/process_yEd_graph/data
+/data/downloaded
+/data/data_bio

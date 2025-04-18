@@ -393,32 +393,23 @@ def prepare_file(file_path):
     return res_total
 
 # Пути (непутю)
-version = "6"
+version = "7_wo_Lizilnop_Spironol"
 # Входные данные
-file_path = f"data\\data_{version}.jsonl"
+file_path = f"data\\data_bio\\data_{version}.jsonl"
 
 # Выходные данные
-file_path_relation = f"data\\data_relations_{version}.csv"
-file_path_bio = f"data_bio\\data_bio_{version}.json"
-file_path_log = f"data\\data_log_{version}.txt"
-
-
+file_path_relation = f"data\\data_bio\\data_relations_{version}.csv"
+file_path_bio = f"data\\data_bio\\data_bio_{version}.json"
+file_path_log = f"data\\data_bio\\data_log_{version}.json"
 
 with open(file_path_log, 'w', encoding='utf-8') as file_log:
     file_log.write("")
 
-# file_path_log = "convertors\\test\\log.txt"
-
 if __name__ == "__main__":
     result = prepare_file(file_path)
 
-    # print(item["relations"])
-
-    # total_rel_1 = 0
-
     # Запись связей
     with open(file_path_relation, 'w', encoding='utf-8') as file_rel:
-        # file_rel.write("from||label_from||sent_from||type||to||label_to||sent_to\n")
         file_rel.write("from$label_from$sent_from$type$to$label_to$sent_to\n")
         for sent_list in result:
             for item in sent_list:
@@ -428,16 +419,7 @@ if __name__ == "__main__":
                     write_line = f"{entity_from}${label_from}${text_from}${relation_type}${entity_to}${label_to}${text_to}\n"
                     write_line = write_line.replace("•", "*")
                     write_line = write_line.replace("( ", "(")
-                    # write_line = write_line.replace("||", "$")
                     file_rel.write(write_line)
-
-                # for not_relation in (item["missing_relations"]):
-                #     from_entity, from_text, relation_type, to_entity, to_text = not_relation
-                #     write_line = f"{from_entity}||{from_text}||{relation_type}||{to_entity}||{to_text}\n"
-                #     write_line = write_line.replace("( ", "(")
-                #     file_rel.write(write_line)
-
-        # print(total_rel_1)
 
     # Запись BIO
     with open(file_path_bio, 'w', encoding='utf-8') as file_bio:
@@ -447,12 +429,10 @@ if __name__ == "__main__":
                
                 bio_list.append(item["token_tag_dict"])
 
-            # Записываем весь объект в файл
+        # Записываем весь объект в файл
         json.dump(bio_list, file_bio, ensure_ascii=False, indent=4)
         
     # Логи
     with open(file_path_log, 'w', encoding='utf-8') as file_log:
         json.dump(result, file_log, ensure_ascii=False, indent=4)
-
-    # print(total_rel)
 

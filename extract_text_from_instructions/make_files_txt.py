@@ -2,7 +2,7 @@ import json
 import os
 
 DIR_SAVE = "extract_text_from_instructions\\data\\Инструкции_txt"
-FILENAME = "extract_text_from_instructions\\data\\extracted_data_all.json"
+FILENAME = "extract_text_from_instructions\\data\\extracted_data_pdf.json"
 
 def save_drugs_from_json(json_file):
     # Читаем JSON-файл

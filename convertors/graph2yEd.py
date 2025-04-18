@@ -1,5 +1,8 @@
 import networkx as nx
-import yedLib
+import sys
+sys.path.append("")
+
+from utils import yedLib
 
 def graph2yEd(graph, loaded_yed = False):
     graph_yed = yedLib.Graph()

@@ -299,7 +299,7 @@ class fetch_pdf_or_rlsnet_side_effects():
             if not drug.get("source"):
                 continue  # Пропускаем записи без источника
 
-            drug_name_ru = drug["drug_name_ru"].lower()
+            normalized_name = '+'.join(sorted(drug["drug_name_ru"].lower().split('+')))
 
             # Новая структура данных
             drug_info = {
@@ -324,7 +324,7 @@ class fetch_pdf_or_rlsnet_side_effects():
                     else:
                         print(f"Неожиданный формат для '{section}': {type(content)}")
 
-            processed_data[drug_name_ru] = drug_info
+            processed_data[normalized_name] = drug_info
 
         return processed_data
     
@@ -340,7 +340,7 @@ class fetch_pdf_or_rlsnet_side_effects():
     
     def convert_side_e(self, side_e_dataset):
         if self.synonim_dict is None:
-            print("Словарь не загружен")
+            print("Классификатор не загружен")
             return side_e_dataset
         
         # Глубокая копия всех вложенных структур

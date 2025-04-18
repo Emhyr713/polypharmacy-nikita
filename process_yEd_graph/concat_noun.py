@@ -202,11 +202,13 @@ def collect_nodes_edges(G, nodes_set, edges_set):
         label, tag = extract_label_and_tag(G, node)
         nodes_set.add((label, tag))
 
-        if tag not in ('absorbtion', 'action', 'excretion', 'group', 'prot_link', 'mechanism', 'metabol', 'hormone', 'side_e', 'prepare'):
+        if tag not in ('absorbtion', 'action', 'excretion', 'group', 'prot_link', 'mechanism', 'metabol', 'hormone', 'side_e', 'prepare', 'distribution'):
             print_message(f"label:{label}, tag:{tag}, prepare:{main_prepare}", "INVALID TAG")
+            continue
 
         if tag != "side_e" and not list(G.predecessors(node)) and not list(G.successors(node)):
             print_message(f"label:{label}, tag:{tag}, prepare:{main_prepare}", "INVALID EDGE")
+            continue
 
         # Связывание несвязанных побочных эффектов
         if tag == "side_e" and not list(G.predecessors(node)):
@@ -217,9 +219,8 @@ def collect_nodes_edges(G, nodes_set, edges_set):
     for target, source in G.edges():
         label_t, tag_t = extract_label_and_tag(G, target)
         label_s, tag_s = extract_label_and_tag(G, source)
-        edges_set.add((label_t, label_s))
+        edges_set.add((f"{label_t}({tag_t})", f"{label_s}({tag_s})"))
 
-    
     return nodes_set, edges_set
 
 
@@ -352,47 +353,53 @@ def test_graph_3():
 
 if __name__ == "__main__":
 
-    dir_graph_edit = "data\\graph_data_yEd_edit"
-    dir_graph_processed = "data\\graph_data_yed_processed"
-    csv_nodes = "list_nodes.csv"
-    csv_edges = "list_edges.csv"
+
+    dir_graph_edit = "process_yEd_graph\\data\\graph_yEd_raw"
+    dir_graph_processed = "process_yEd_graph\\data\\graph_yEd_processed"
+
+    DIR_CSV_NODES = "process_yEd_graph\\data\\list_nodes.csv"
+    DIR_CSV_EDGES = "process_yEd_graph\\data\\list_edges.csv"
 
     nodes_set = set()
     edges_set = set()
 
-    for i, filename in enumerate(os.listdir(dir_graph_edit)):
-        if filename.endswith(".graphml"):
 
-            print("filename opened:", filename)
+    for i_dir in range (2):
+        current_dir_read = f"{dir_graph_edit}_{i_dir+1}"
+        current_dir_save = f"{dir_graph_processed}_{i_dir+1}"
+        for i, filename in enumerate(os.listdir(current_dir_read)):
+            if filename.endswith(".graphml"):
 
-            # Загрузка графа
-            G = load_graphml(f"{dir_graph_edit}\\{filename}")
-            # Этап 1
-            G = concat_hanging_act_mech(G)
-            # Этап 2
-            G = remove_remaining_noun(G)
-            # Подсчёт вершин и рёбер
-            nodes_set, edges_set = collect_nodes_edges(G, nodes_set, edges_set)
+                print("filename opened:", filename)
 
-            xml_str = graph2yEd(G, loaded_yed=True)
-            with open(f"{dir_graph_processed}\\{filename}", "w", encoding="utf-8") as f:
-                f.write(xml_str)
+                # Загрузка графа
+                G = load_graphml(f"{current_dir_read}\\{filename}")
+                # Этап 1
+                G = concat_hanging_act_mech(G)
+                # Этап 2
+                G = remove_remaining_noun(G)
+                # Подсчёт вершин и рёбер
+                nodes_set, edges_set = collect_nodes_edges(G, nodes_set, edges_set)
+
+                xml_str = graph2yEd(G, loaded_yed=True)
+                with open(f"{current_dir_save}\\{filename}", "w", encoding="utf-8") as f:
+                    f.write(xml_str)
 
 
     # Сохранение в csv для узлов
     header_nodes = ["label", "tag"]
-    with open(f"{dir_graph_processed}\\{csv_nodes}", "w", newline="", encoding="utf-8") as f:
+    with open(DIR_CSV_NODES, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, delimiter=";")   # Указываем delimiter при создании writer
         writer.writerow(header_nodes)           # Записываем заголовки
         writer.writerows(nodes_set)             # Записываем кортежи
 
     # Сохранение в csv для рёбер
     header_edges = ["source", "target"]  # Пример для рёбер (можно изменить по вашим данным)
-    with open(f"{dir_graph_processed}\\{csv_edges}", "w", newline="", encoding="utf-8") as f:
+    with open(DIR_CSV_EDGES, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, delimiter=";")   # Указываем delimiter при создании writer
         writer.writerow(header_edges)           # Записываем заголовки
         writer.writerows(edges_set)             # Записываем кортежи
 
     print_message(f"nodes_set:{len(nodes_set)}, edges_set:{len(edges_set)}")
 
-    save_in_sqltable(f"{dir_graph_processed}\\graph.db", nodes_set, edges_set)
+    # save_in_sqltable(f"{dir_graph_processed}\\graph.db", nodes_set, edges_set)

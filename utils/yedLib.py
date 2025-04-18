@@ -417,6 +417,10 @@ class Node:
     def add_label(self, label_text, **kwargs):
         self.list_of_labels.append(NodeLabel(label_text, **kwargs))
         return self
+    
+    # By Emhyr
+    def get_label_text_list(self):
+        return [label._text for label in self.list_of_labels]
 
 
     def convert(self):
@@ -653,17 +657,28 @@ class Graph:
 
         self.graphml = graphml
 
+
     def write_graph(self, filename, pretty_print=False):
         self.construct_graphml()
 
+        xml_declaration = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n'
+
+        raw_str = ET.tostring(self.graphml, encoding='utf-8')
+        
         if pretty_print:
-            raw_str = ET.tostring(self.graphml)
-            pretty_str = minidom.parseString(raw_str).toprettyxml()
-            with open(filename, 'w') as f:
+            parsed = minidom.parseString(raw_str)
+            pretty_str = parsed.toprettyxml(indent="  ")
+            
+            # Убираем дублирующуюся xml-декларацию от minidom
+            pretty_str = '\n'.join(pretty_str.split('\n')[1:])
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(xml_declaration)
                 f.write(pretty_str)
         else:
-            tree = ET.ElementTree(self.graphml)
-            tree.write(filename)
+            # Без prettify, просто пишем xml с нужной шапкой
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(xml_declaration)
+                f.write(raw_str.decode('utf-8'))
 
     def get_graph(self):
         self.construct_graphml()

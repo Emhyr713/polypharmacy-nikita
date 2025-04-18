@@ -1,4 +1,7 @@
-from convertors.normalize_text import normalize_text
+import sys
+sys.path.append("")
+
+from utils.normalize_text import normalize_text
 
 import json
 
@@ -194,7 +197,7 @@ def BIO2ent_sent(data):
 
 if __name__ == "__main__":
 
-    with open("data_bio\\data_bio_6.json", 'r', encoding='utf-8') as file:
+    with open("data\\dowloaded\\output.json", 'r', encoding='utf-8') as file:
         data = json.load(file)
 
     # entity_sent = BIO2ent_sent(data)
