@@ -28,6 +28,27 @@ def normalize_text(text):
 
     return text
 
+
+HTML_ENTITIES = {
+    "&gt;": "__GT__",
+    "&lt;": "__LT__",
+    "&amp;": "__AMP__",
+    "&quot;": "__QUOT__",
+    "&apos;": "__APOS__"
+}
+
+REVERSE_HTML_ENTITIES = {v: k for k, v in HTML_ENTITIES.items()}
+
+def protect_html_entities(text):
+    for k, v in HTML_ENTITIES.items():
+        text = text.replace(k, v)
+    return text
+
+def restore_html_entities(text):
+    for k, v in REVERSE_HTML_ENTITIES.items():
+        text = text.replace(k, v)
+    return text
+
 class EnhancedMorphAnalyzer:
     def __init__(self,
                  corrections_path="CustomPymorphy\\custom_lemma_dict.json"
@@ -66,10 +87,15 @@ class EnhancedMorphAnalyzer:
         return enhanced_results
     
     def lemmatize_string(self, text):
-        """Лемматизирует текст с использованием морфологического анализатора."""
+        """Лемматизирует текст с сохранением html-сущностей."""
+        text = protect_html_entities(text)  # Сначала прячем &gt;, &amp; и т.п.
+        
         words = re.findall(r'\w+|[^\w\s]', text)
         lemmatized = [self.parse(word)[0].normal_form for word in words]
-        return normalize_text(' '.join(lemmatized))
+        result = normalize_text(' '.join(lemmatized))
+
+        result = restore_html_entities(result)  # Возвращаем сущности обратно
+        return result
 
 class EnhancedParse:
     """

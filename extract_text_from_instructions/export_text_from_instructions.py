@@ -48,7 +48,21 @@ def extract_sections(name, text):
         text_main = re.sub(r'\n', ' ', text_main)
         text_main = re.sub(r'\s+', ' ', text_main)
         sections["text"] = text_main
+
+
+    # Извлекаем текст от "Побочные действия" до "Передозировка"
+    match_side_e = re.search(
+        r'(\nПобочн(?:ое|ые)\s*действ(?:ие|ия)|\nПОБОЧН(?:ОЕ|ЫЕ)\s*ДЕЙСТВ(?:ИЕ|ИЯ))(?:\s*[.:]\s*)?(.*?)(?:\n|\A)(Передозировка|ПЕРЕДОЗИРОВКА)',
+        text,
+        re.DOTALL
+    )
     
+    if match_side_e:
+        text_main = match_side_e.group(2).strip()
+        text_main = re.sub(r'\n', ' ', text_main)
+        text_main = re.sub(r'\s+', ' ', text_main)
+        sections["text_side_e"] = text_main
+
     return sections
 
 def extract_text_pdf(dir_list = DIR_LIST_PDF):

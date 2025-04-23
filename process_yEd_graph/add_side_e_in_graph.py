@@ -1,164 +1,202 @@
 import os
-import json
-import csv
-import re
-import pandas as pd
-import networkx as nx
 import sys
+import csv
+import json
+import re
+import xml.etree.ElementTree as ET
+from typing import Tuple, List, Set
 sys.path.append("")
 
-import xml.etree.ElementTree as ET
-
-from utils.yedLib import Graph, Node
-from process_nx_graph import ProcessNxGraph
+from utils.yedLib import Graph
+# from process_nx_graph import ProcessNxGraph
 from CustomPymorphy.CustomPymorphy import EnhancedMorphAnalyzer
+
+# import pandas as pd
+# import networkx as nx
+
+# Для кастомного морфоанализатора (не используется, но загружается)
 custom_morph = EnhancedMorphAnalyzer()
 
-# Регистрируем префиксы, чтобы при сохранении они остались
-ET.register_namespace("", "http://graphml.graphdrawing.org/xmlns")
-ET.register_namespace("y", "http://www.yworks.com/xml/graphml")
+# # Регистрация пространств имён для yEd/GraphML
+# ET.register_namespace("", "http://graphml.graphdrawing.org/xmlns")
+# ET.register_namespace("y", "http://www.yworks.com/xml/graphml")
+# ns = {
+#     "g": "http://graphml.graphdrawing.org/xmlns",
+#     "y": "http://www.yworks.com/xml/graphml"
+# }
 
-ns = {
-    "g": "http://graphml.graphdrawing.org/xmlns",
-    "y": "http://www.yworks.com/xml/graphml"
-}
 
-def split_by_bracket(text):
+# def split_by_bracket(text: str) -> Tuple[str, str] | Tuple[None, None]:
+#     """
+#     Делит строку по скобке (например, 'value (tag)' -> ('value', 'tag'))
+#     """
+#     match = re.search(r"^(.*)\s*\(([^)]+)\)$", text)
+#     return (match.group(1).strip(), match.group(2).strip()) if match else (None, None)
+
+
+# def load_graphml_to_graph(path: str) -> Graph:
+#     """
+#     Загружает .graphml файл и возвращает объект Graph с узлами и рёбрами
+#     """
+#     with open(path, 'r', encoding='utf-8') as f:
+#         tree = ET.parse(f)
+#     root = tree.getroot()
+#     graph_el = root.find("g:graph", ns)
+
+#     g = Graph(directed=graph_el.get("edgedefault"), graph_id=graph_el.get("id"))
+
+#     for node_el in graph_el.findall("g:node", ns):
+#         node_id = node_el.get("id")
+#         data_el = node_el.find("g:data[y:ShapeNode]", ns)
+
+#         if data_el is None:
+#             g.add_node(node_id)
+#             continue
+
+#         shape_el = data_el.find("y:ShapeNode", ns)
+#         geom = shape_el.find("y:Geometry", ns)
+
+#         x = float(geom.get("x", "0")) if geom is not None else 0.0
+#         y = float(geom.get("y", "0")) if geom is not None else 0.0
+#         w = geom.get("width") if geom is not None else None
+#         h = geom.get("height") if geom is not None else None
+
+#         label_el = shape_el.find("y:NodeLabel", ns)
+#         label = label_el.text if label_el is not None else node_id
+
+#         g.add_node(node_id,
+#                    label=label,
+#                    x=str(x), y=str(y),
+#                    shape="ellipse",
+#                    width=w, height=h)
+
+#     for edge_el in graph_el.findall("g:edge", ns):
+#         g.add_edge(edge_el.get("source"), edge_el.get("target"))
+
+#     return g
+
+
+# def find_prepare_nodes(G: Graph) -> Tuple[str, Tuple[float, float]]:
+#     """
+#     Находит все препараты в графе по слову 'prepare' и определяет координаты добавления побочек
+#     """
+#     found = []
+
+#     for node_id, node in G.nodes.items():
+#         for label in node.get_label_text_list():
+#             if "prepare" in label.lower():
+#                 value, _ = split_by_bracket(label.lower())
+#                 found.append((value, float(node.geom["x"]), float(node.geom["y"])))
+
+#     if not found:
+#         raise ValueError("No 'prepare' nodes found in graph.")
+
+#     labels, xs, ys = zip(*found)
+#     drug_name = '+'.join(sorted(labels))
+#     return drug_name, (max(xs), min(ys))
+
+
+# def find_side_effects(G: Graph) -> Set[str]:
+#     """
+#     Ищет уже существующие в графе побочные эффекты
+#     """
+#     side_effects = set()
+
+#     for node_id, node in G.nodes.items():
+#         for label in node.get_label_text_list():
+#             if "side_e" in label.lower():
+#                 value, _ = split_by_bracket(label.lower())
+#                 if value:
+#                     side_effects.add(value)
+
+#     return side_effects
+
+
+def load_additional_side_effects(filename: str, drug: str, existing: Set[str]) -> List[str]:
     """
-    Отделение строки со скобкой на 2 строки
+    Загружает список побочек из JSON и отбирает те, которых ещё нет в графе
     """
-    match = re.search(r"^(.*)\s*\(([^)]+)\)$", text)
-    if match:
-        return match.group(1).strip(), match.group(2).strip()
-    return None, None
-
-
-# Парсинг graphml графа
-def load_graphml_to_graph(path: str) -> Graph:
-    # Открываем файл в UTF-8
-    with open(path, 'r', encoding='utf-8') as f:
-        tree = ET.parse(f)
-    root = tree.getroot()
-
-    graph_el = root.find("g:graph", ns)
-    g = Graph(directed=graph_el.get("edgedefault"),
-              graph_id=graph_el.get("id"))
-
-    for node_el in graph_el.findall("g:node", ns):
-        node_id = node_el.get("id")
-
-        # 1) найти первый data, в котором есть ShapeNode
-        data_el = node_el.find("g:data[y:ShapeNode]", ns)
-        if data_el is None:
-            # возможно изолированный узел без визуалки
-            g.add_node(node_id)
-            continue
-
-        shape_el = data_el.find("y:ShapeNode", ns)
-        if shape_el is None:
-            g.add_node(node_id)
-            continue
-
-        # 2) Geometry
-        geom = shape_el.find("y:Geometry", ns)
-        if geom is None:
-            x = y = 0.0
-            w = h = None
-        else:
-            x = float(geom.get("x", "0"))
-            y = float(geom.get("y", "0"))
-            w = geom.get("width")
-            h = geom.get("height")
-
-        # 3) Label
-        label_el = shape_el.find("y:NodeLabel", ns)
-        label = label_el.text if label_el is not None else node_id
-
-        # 4) Добавляем узел с атрибутами в ваш Graph
-        g.add_node(node_id,
-                   label=label,
-                   x=str(x), y=str(y),
-                   shape = "ellipse",
-                   width=w, height=h)
-
-    # Рёбра
-    for edge_el in graph_el.findall("g:edge", ns):
-        src = edge_el.get("source")
-        tgt = edge_el.get("target")
-        g.add_edge(src, tgt)
-
-    return g
-
-def add_shifted_from_prepare(G, side_e_list, coords, shift = 50):
-
-    for new_node in side_e_list:
-        G.add_node(f"{new_node}(side_e)",
-                    label=f"{new_node}(side_e)",
-                    x=str(coords[0]+shift),
-                    y=str(coords[1]),
-                    shape="ellipse")
-
-def find_prepare(G):
-    result = []
-
-    for node_id, node in G.nodes.items():
-        for label in node.get_label_text_list():
-            text = label.lower()
-            if "prepare" in text:
-                label, tag = split_by_bracket(text)
-                
-                result.append([label, float(node.geom["x"]), float(node.geom["y"])])
-
-    # Собираем все label'ы, x и y
-    labels = [label for label, _, _ in result]
-    xs = [x for _, x, _ in result]
-    ys = [y for _, _, y in result]
-
-    # Формируем drug_name
-    drug_name = '+'.join(sorted(labels))
-
-    # Самая правая (max x) и самая верхняя (min y) координаты
-    rightmost_x = max(xs)
-    topmost_y = min(ys)
-
-    print(drug_name, rightmost_x, topmost_y)
-    return drug_name, (rightmost_x, topmost_y)
-
-def find_side_e(G):
-    side_list = set()
-
-    for node_id, node in G.nodes.items():
-        for label in node.get_label_text_list():
-            text = label.lower()
-            if "side_e" in text:
-                label, tag = split_by_bracket(text)
-                
-                side_list.add(label)
-
-    return side_list
-
-def load_side_e(filename, drug, existing_side_e):
     with open(filename, "r", encoding="utf-8") as f:
-        side_e_list = json.load(f)[drug]["side_e_parts"]
+        data = json.load(f)
 
-    not_exist_side_e = [side_e for side_e in side_e_list if side_e not in list(existing_side_e)]
-    return not_exist_side_e
-            
+    side_e_list = data.get(drug, {}).get("side_e_parts", [])
+    return [s for s in side_e_list if s not in existing]
+
+
+def add_shifted_nodes(G: Graph, side_effects: List[str], base_coords: Tuple[float, float], shift: float = 50):
+    """
+    Добавляет побочные эффекты в граф со смещением по X от базовой координаты
+    """
+    base_x, base_y = base_coords
+    for se in side_effects:
+        G.add_node(f"{se}(side_e)",
+                   label=f"{se}(side_e)",
+                   x=str(base_x + shift),
+                   y=str(base_y),
+                   shape="ellipse")
+        
+
+def load_edges_from_csv(path: str, added_side_e: list) -> List[Tuple[str, str]]:
+    """
+    Загружает список рёбер из CSV-файла (столбцы 'source', 'target')
+    Учитываются только те возможные рёбра, которые входят в добавленные побочки
+    """
+    edges = []
+    with open(path, newline='', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for row in reader:
+            source = row.get("source")
+            target = row.get("target")
+            if source and target and target in added_side_e:
+                edges.append((source.strip(), target.strip()))
+    return edges
+
+
+def add_csv_edges_to_graph(G: Graph, edge_list: List[Tuple[str, str]]):
+    """
+    Добавляет рёбра между узлами, если оба существуют в графе
+    """
+    node_list = [node.get_label_text_list()[0] for node_id, node in G.nodes.items()]
+
+    for source, target in edge_list:
+        if source in node_list and target in node_list:
+            G.add_edge( source,
+                        target,
+                        color = "#FF0000")
+        # else:
+        #     print(f"Skipped edge: '{source}' -> '{target}' (one or both nodes missing)")
+
+
+def main():
+    # Путь к данным
+    input_graph_path = "process_yEd_graph\\data\\graph_yEd_raw_1\\drug_geparin_na.graphml"
+    side_effect_json = "make_side_effect_dataset\\data\\sef_dataset.json"
+    output_graph_dir = "process_yEd_graph\\data\\test_graphs"
+    csv_path = "process_yEd_graph\\data\\list_edges.csv"
+
+    # Загрузка графа
+    graph = load_graphml_to_graph(input_graph_path)
+
+    # Поиск препаратов
+    drug_name, base_coords = find_prepare_nodes(graph)
+
+    # Поиск уже существующих побочек
+    existing_effects = find_side_effects(graph)
+
+    # Загрузка новых побочек
+    new_side_effects = load_additional_side_effects(side_effect_json, drug_name, existing_effects)
+
+    # Добавление новых узлов
+    add_shifted_nodes(graph, new_side_effects, base_coords, shift=200.0)
+
+    # Загрузка и добавление рёбер из CSV, если файл существует
+    edge_list = load_edges_from_csv(csv_path, new_side_effects)
+    add_csv_edges_to_graph(graph, edge_list)
+
+    # Сохранение графа
+    output_path = os.path.join(output_graph_dir, f"test_{drug_name}_add_side_e.graphml")
+    graph.write_graph(output_path, pretty_print=True)
+    print(f"Graph saved to: {output_path}")
+
 if __name__ == "__main__":
-    # 1. загрузка
-    G = load_graphml_to_graph("process_yEd_graph\\data\\graph_yEd_raw_1\\drug_linagliptin_empalogiphlozin.graphml")
-
-    # 2. Поиск целевых препаратов в графе и их координат
-    prepare, coords = find_prepare(G)
-
-    # 3. Поиск побочек из текущего графа
-    existing_side_e = find_side_e(G)
-
-    # 4. Загрузка побочных эффектов
-    side_e_list = load_side_e("make_side_effect_dataset\\data\\sef_dataset.json", prepare, existing_side_e)
-
-    # 5. добавляем сдвинутые узлы
-    add_shifted_from_prepare(G, side_e_list, coords, shift=200.0)
-
-    # 6. сохраняем
-    G.write_graph(f"process_yEd_graph\\data\\test_graphs\\test_{prepare}_add_side_e.graphml", pretty_print=True)
+    main()

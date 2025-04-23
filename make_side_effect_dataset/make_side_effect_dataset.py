@@ -299,7 +299,8 @@ class fetch_pdf_or_rlsnet_side_effects():
             if not drug.get("source"):
                 continue  # Пропускаем записи без источника
 
-            normalized_name = '+'.join(sorted(drug["drug_name_ru"].lower().split('+')))
+            lemmatized_drug_name = custom_morph.lemmatize_string(drug["drug_name_ru"])
+            normalized_name = '+'.join(sorted(lemmatized_drug_name.lower().split('+')))
 
             # Новая структура данных
             drug_info = {
@@ -451,7 +452,7 @@ if __name__ == "__main__":
         side_e_dataset.append(result)
 
     # Замена побочек на побочку из словаря
-    side_e_dataset = fetcher.convert_side_e(side_e_dataset)
+    # side_e_dataset = fetcher.convert_side_e(side_e_dataset)
 
     # Конвертация в вид Побочка -- Частота
     sef_dataset = fetcher.process_drug_data(side_e_dataset)

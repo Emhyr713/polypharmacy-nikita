@@ -1,9 +1,10 @@
 import uuid
 import matplotlib.pyplot as plt
 import networkx as nx
-from io import StringIO
 import re
 import sys
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
 sys.path.append("")
 
 from utils import yedLib
@@ -17,12 +18,16 @@ class ProcessNxGraph():
                    'prot_link', 'mechanism', 'metabol', 'hormone',
                    'side_e', 'prepare', 'distribution']
 
-    def __init__(self, morph_analyzer, side_e_dict = {}, flag_debag = False):
+    def __init__(self, morph_analyzer = custom_morph, side_e_dict = None, flag_debag = False):
         self.morph_analyzer = morph_analyzer
         self.flag_debag = flag_debag
-        self.map_side_e_dict = {side_e:side_104 for side_104, side_e in side_e_dict}
+        
         self.nodes_set = set()
         self.edges_set = set()
+
+        self.map_side_e_dict = None
+        if side_e_dict:
+            self.map_side_e_dict = {side_e:side_104 for side_104, side_e in side_e_dict}
 
     @classmethod
     def get_tags_list(cls):
@@ -51,7 +56,7 @@ class ProcessNxGraph():
         node_label = G.nodes[node].get('label', node)
         return self.split_by_bracket(node_label)
     
-    def find_main_prepare(self, G, include_tag = False):
+    def find_prepare_nodes(self, G):
         """
         Поиск ЛС в графе
         """
@@ -59,14 +64,11 @@ class ProcessNxGraph():
 
         # Поиск ЛС в графе
         for node in G.nodes():
-            parents = G.predecessors(node)
-            parent_tags = [self.extract_label_and_tag(G, parent)[1] for parent in parents]
+            parents_id = G.predecessors(node)
+            parent_tags = [self.extract_label_and_tag(G, parent_id)[1] for parent_id in parents_id]
             node_label, node_tag = self.extract_label_and_tag(G, node)
-            if parents and any(tag == 'group' for tag in parent_tags) and node_tag == 'prepare':
-                if include_tag:
-                    main_prepare.append(node)
-                else:
-                    main_prepare.append(node_label)
+            if parents_id and any(tag == 'group' for tag in parent_tags) and node_tag == 'prepare':
+                main_prepare.append(node)
         
         return main_prepare
     
@@ -112,20 +114,23 @@ class ProcessNxGraph():
                 label_parent, tag_parent = self.extract_label_and_tag(G, parent)
                 for child in noun_children:            
                     label_child, tag_child = self.extract_label_and_tag(G, child)
-                    new_node = f"{label_parent} {label_child}({tag_parent})"
-                    G.add_node(new_node, label=new_node)
+
+                    new_id = str(uuid.uuid4())
+                    new_label = f"{label_parent} {label_child}({tag_parent})"
+                    x, y = G.nodes[child].get("x", 0), G.nodes[child].get("y", 0)
+                    G.add_node(new_id, label=new_label, x=x, y=y)
 
                     for prechild in list(G.predecessors(child)):
                         if prechild != parent:
-                            G.add_edge(prechild, new_node)
+                            G.add_edge(prechild, new_id)
                     
                     # Добавление рёбер от нового узла к потомкам узла-потомка
                     for grandchild in list(G.successors(child)):
-                        G.add_edge(new_node, grandchild)
+                        G.add_edge(new_id, grandchild)
 
-                    self.print_message(f"new_node:{new_node},"
-                        f"->new_node: {list(G.predecessors(new_node))},"
-                        f"new_node->: {list(G.successors(new_node))}")
+                    self.print_message(f"new_node:{new_label},"
+                        f"->new_node: {list(G.predecessors(new_id))},"
+                        f"new_node->: {list(G.successors(new_id))}")
                     
                     # Удаляем узел потомка с тегом 'noun'
                     nodes_to_remove.add(child)
@@ -148,9 +153,9 @@ class ProcessNxGraph():
             node for node in list(G.nodes())
             if self.extract_label_and_tag(G, node)[1] in ('action', 'mechanism') and G.in_degree(node) == 0
         ]
-        main_prepares = self.find_main_prepare(G, include_tag=True)
+        prepare_nodes = self.find_prepare_nodes(G)
         for node in hanging_act_mech:
-            for prepare in main_prepares:
+            for prepare in prepare_nodes:
                 G.add_edge(prepare, node)
 
         return G
@@ -174,33 +179,30 @@ class ProcessNxGraph():
             if node in nodes_to_remove:
                 continue       
 
-            nodes_to_add = []
-
             # node_label = G.nodes[node].get('label',node)
             node_name, node_tag = self.extract_label_and_tag(G, node)
             children = list(G.successors(node))
 
             if node_tag is None:
                 self.print_message(f"Node:{node}, Node_name:{node_name}, Node_tag:{node_tag} is NONE", "WARNING")
-            
-            # print(f"Processing node: {node_name} (Tag: {node_tag})")
-            
+                        
             for child in children:
                 # child_label = G.nodes[child].get('label',node)
                 child_name, child_tag = self.extract_label_and_tag(G, child)
+                x, y = G.nodes[child].get("x", 0), G.nodes[child].get("y", 0)
                 if child_tag == "noun":
-                    new_node = f"{node_name} {child_name}({node_tag})"
-                    nodes_to_add.append(new_node)
+                    new_id = str(uuid.uuid4())
+                    new_label = f"{node_name} {child_name}({node_tag})"
 
                     # Добавление нового узела и добавление его в очередь
-                    G.add_node(new_node, label = new_node)
-                    queue.append(new_node)  
+                    G.add_node(new_id, label = new_label, x=x, y=y)
+                    queue.append(new_id)  
 
                     # "Наследование" связей от текущего обрабатываемого узла
                     for parent in G.predecessors(node):
-                        G.add_edge(parent, new_node)
+                        G.add_edge(parent, new_id)
                     for child_successor in G.successors(child):
-                        G.add_edge(new_node, child_successor)
+                        G.add_edge(new_id, child_successor)
 
                     # Добавление в список удаления
                     nodes_to_remove.add(child)  
@@ -210,6 +212,7 @@ class ProcessNxGraph():
             if children and all(tag == 'noun' for tag in child_tags):
                 nodes_to_remove.add(node)
 
+        self.print_message(f"nodes_to_remove: {nodes_to_remove}")
         # Удаление узлов после завершения обработки
         for remove_node in nodes_to_remove:
             if remove_node in G:
@@ -229,18 +232,16 @@ class ProcessNxGraph():
         # По всем узлам графа
         for node in G.nodes():
             label, tag = self.extract_label_and_tag(G, node)
-            self.nodes_set.add((label, tag))
 
             if tag not in ProcessNxGraph.get_tags_list():
                 self.print_message(f"label:{label}, tag:{tag}, prepare:{main_prepare}", "INVALID TAG")
+                continue
 
             if tag != "side_e" and not list(G.predecessors(node)) and not list(G.successors(node)):
-                self.print_message(f"label:{label}, tag:{tag}, prepare:{main_prepare}", "INVALID EDGE")
+                self.print_message(f"label:{label}, tag:{tag}, prepare:{main_prepare}", "INVALID NODE")
+                continue
 
-            # # Связывание несвязанных побочных эффектов
-            # if tag == "side_e" and not list(G.predecessors(node)):
-            #     for prepare in main_prepare:
-            #         self.edges_set.add((prepare, label))
+            self.nodes_set.add((label, tag))
 
         # По всем рёбрам
         for target, source in G.edges():
@@ -261,7 +262,7 @@ class ProcessNxGraph():
         G_new = G.copy()
 
         # Поиск вершин ЛС, к которым прикрепятся изолированные side_e
-        main_prepare = self.find_main_prepare(G, include_tag=True)
+        main_prepare = self.find_prepare_nodes(G)
 
         # Добавление рёбер от узлов 'prepare' к 'side_e', у которых нет предков
         for node in G.nodes():
@@ -280,19 +281,22 @@ class ProcessNxGraph():
         (Проверить)
         """
 
+        if self.map_side_e_dict is None:
+            self.print_message("Загрузите классификатор побочек.", type_message="ERROR")
+
         G_new = G.copy()
 
         # Добавление рёбер от узлов 'prepare' к 'side_e', у которых нет предков
         for node in G.nodes():
             node_label, node_tag = self.extract_label_and_tag(G, node)
+            x, y = G.nodes[node].get("x", 0), G.nodes[node].get("y", 0)
             if node_tag == 'side_e':
 
-                new_name = self.side_e_dict.get(node_label, node_label)
-
-                # new_name = # ПОИСК ПОДХОДЯЩЕЙ ЗАМЕНЫ на побочку
+                # Поиск подходящей замены на побочку согласно классификатору
+                new_name = self.map_side_e_dict.get(node_label, node_label)
 
                 # Добавить новый узел
-                G_new.add_node(new_name, label=f"{node_label}({node_tag})")
+                G_new.add_node(str(uuid.uuid4()), label=f"{node_label}({node_tag})", x=x, y=y)
 
                 # Перенести входящие рёбра (u → A)
                 for u, _ in list(G.in_edges(node)):
@@ -306,42 +310,74 @@ class ProcessNxGraph():
             G.remove_node(node)
 
         return G_new
-
-
-    def merge_graphs(self, graphs):
+    
+    
+    def merge_nodes_by_label(self, G: nx.Graph) -> nx.Graph:
         """
-        Объединяет несколько графов, сохраняя и объединяя мета-данные узлов.
-        
-        Args:
-            graphs (list): Список графов для объединения.
-        
-        Returns:
-            networkx.Graph: Новый граф с объединенными узлами, ребрами и мета-данными.
+        Объединяет несколько вершин, сохраняя и объединяя мета-данные узлов.
         """
-        if not graphs:
-            print("На вход не поданы графы")
-            return nx.Graph()
+        # Группируем вершины по label
+        label_to_nodes = {}
+        for node_id, data in G.nodes(data=True):
+            label = data.get('label')
+            if label is not None:
+                if label not in label_to_nodes:
+                    label_to_nodes[label] = []
+                label_to_nodes[label].append(node_id)
 
-        # Выбираем тип результирующего графа
-        directed = any(g.is_directed() for g in graphs)
-        M = nx.DiGraph() if directed else nx.Graph()
+        new_G = nx.DiGraph()
 
-        # Добавляем все узлы по их label
-        for G in graphs:
-            for n, data in G.nodes(data=True):
-                lab = data.get('label', str(n))
-                if lab not in M:
-                    M.add_node(lab, label=lab)
+        label_to_new_node = {}
+        
+        # Создаем новые вершины с объединёнными данными
+        for label, nodes in label_to_nodes.items():
+            if not nodes:
+                continue
+            # Вычислим средние координаты
+            x_avg = sum(float(G.nodes[n]['x']) for n in nodes) / len(nodes)
+            y_avg = sum(float(G.nodes[n]['y']) for n in nodes) / len(nodes)
+            new_node_id = str(uuid.uuid4())
+            new_G.add_node(new_node_id, label=label, x=str(x_avg), y=str(y_avg))
+            label_to_new_node[label] = new_node_id
 
-        # Добавляем все рёбра, переведя концы в их label
-        for G in graphs:
+        # Добавляем рёбра с учётом новых ID
+        for u, v in G.edges():
+            label_u = G.nodes[u]['label']
+            label_v = G.nodes[v]['label']
+            new_u = label_to_new_node[label_u]
+            new_v = label_to_new_node[label_v]
+            if new_u != new_v:
+                new_G.add_edge(new_u, new_v)
+
+        return new_G
+
+    def merge_graph_list_by_label(self, graph_list: list[nx.Graph]) -> nx.DiGraph:
+        """
+        Объединяет список графов в один, сливая вершины по 'label'.
+        Каждая уникальная вершина получает UUID.
+        """
+        combined_G = nx.DiGraph()
+        label_to_uuid = {}
+
+        for G in graph_list:
+            for node_id, data in G.nodes(data=True):
+                label = data.get("label")
+                if label is None:
+                    continue  # Пропускаем узлы без label
+
+                if label not in label_to_uuid:
+                    node_uuid = str(uuid.uuid4())
+                    combined_G.add_node(node_uuid, **data)
+                    label_to_uuid[label] = node_uuid
+
             for u, v in G.edges():
-                lu = G.nodes[u].get('label', str(u))
-                lv = G.nodes[v].get('label', str(v))
-                if not M.has_edge(lu, lv):
-                    M.add_edge(lu, lv)
+                u_label = G.nodes[u].get("label")
+                v_label = G.nodes[v].get("label")
 
-        return M
+                if u_label in label_to_uuid and v_label in label_to_uuid:
+                    combined_G.add_edge(label_to_uuid[u_label], label_to_uuid[v_label])
+
+        return combined_G
         
     @staticmethod
     def print_nodes(G):
@@ -352,12 +388,43 @@ class ProcessNxGraph():
             print(node)
 
     @staticmethod
-    def plot_graph(G):
+    def plot_graph(G, title: str = None):
         """
-        Вывод графа на экран
+        Вывод графа на экран с использованием поля label в качестве подписей узлов
+        и координат x, y, если они заданы. Поддерживается отображение заголовка.
         """
-        pos = nx.shell_layout(G)  
-        nx.draw(G, pos, with_labels=True, node_size=500, node_color="lightblue", font_size=6, edge_color="gray")
+        # Проверяем, есть ли у всех узлов координаты
+        has_coords = all('x' in G.nodes[n] and 'y' in G.nodes[n] for n in G.nodes)
+
+        if has_coords:
+            pos = {
+                n: (float(G.nodes[n]['x']), -float(G.nodes[n]['y']))  # y инвертирован для лучшей визуализации
+                for n in G.nodes
+            }
+        else:
+            print("has_coords:", has_coords)
+            pos = nx.shell_layout(G)
+
+        labels = {
+            node: G.nodes[node].get("label", node)
+            for node in G.nodes
+        }
+
+        plt.figure(figsize=(8, 6))
+        nx.draw(
+            G, pos, labels=labels,
+            with_labels=True,
+            node_size=500,
+            node_color="lightblue",
+            font_size=6,
+            edge_color="gray"
+        )
+
+        if title:
+            plt.title(title)
+
+        plt.axis('off')
+        plt.tight_layout()
         plt.show()
 
     def graph2json(self, G):
@@ -396,44 +463,11 @@ class ProcessNxGraph():
 
         return data
     
-    def yEd2graph(self, file_path):
+    def save_nxGraph_to_yEd(self, G, path):
         """
-        Загружает .graphml, лемматизирует текст узлов (label),
-        если они в формате 'текст(тег)',
-        и возвращает готовый граф networkx.
+        Сохранение графа в формате yEd
         """
 
-        # Читаем содержимое XML-файла
-        with open(file_path, 'r', encoding='utf-8') as f:
-            xml_text = f.read()
-
-        # Функция для замены текста внутри <y:NodeLabel>
-        def repl(match):
-            before, text, after = match.groups()
-            label, tag = self.split_by_bracket(text)
-
-            if not label or not tag:
-                return match.group(0)  # вернуть как есть, если не подходит под шаблон
-
-            lemmatized = self.morph_analyzer.lemmatize_string(label)
-            return f"{before}{lemmatized}({tag}){after}"
-
-        # Заменяем тексты в узлах
-        modified_xml = re.sub(
-            r'(<y:NodeLabel[^>]*>)(.*?)(</y:NodeLabel>)',
-            repl,
-            xml_text,
-            flags=re.DOTALL
-        )
-
-        # Передаём в networkx из памяти
-        return nx.read_graphml(StringIO(modified_xml))
-    
-    def add_side_e_from_dataset(self, G, dataset):
-        pass
-    
-
-    def graph2yEd(self, G, loaded_yed = False):
         graph_yed = yedLib.Graph()
         # Словарь для хранения идентификаторов узлов
         node_ids = {}
@@ -442,34 +476,126 @@ class ProcessNxGraph():
         # Добавление узлов
         for i, node in enumerate(G.nodes()):
 
-            if loaded_yed:
-                label = G.nodes[node].get("label", str(node))
-                node_id = label
-            else:
-                name = G.nodes[node].get("name", str(node))
-                label = G.nodes[node].get("label", str(node))
-                node_id = f"{name}({label})"
+            node_id = str(uuid.uuid4())
+            label = G.nodes[node].get("label", str(node))
+            x = G.nodes[node].get("x", 0)
+            y = G.nodes[node].get("y", 0)
 
             node_ids[node] = node_id
             if node_id not in node_set:
-                graph_yed.add_node(node_id, shape="ellipse")
+                graph_yed.add_node(node_id, label=label, x=x, y=y, shape="ellipse")
                 node_set.add(node_id)
             else:
                 print(f"Узел {node_id} уже существует, добавление пропущено.")
-
 
         # Добавление рёбер
         for i, (source, target, edge_data) in enumerate(G.edges(data=True)):
             graph_yed.add_edge(node_ids[source], node_ids[target], arrowhead="standard")
 
-        return graph_yed.get_graph()
-    
-    def save_nxGraph_to_yEd(self, G, path):
-        xml_str = self.graph2yEd(G, loaded_yed=True)
+        xml_str = graph_yed.get_graph()
+
+        # parsed = minidom.parseString(xml_str)
+        # pretty_xml = parsed.toprettyxml(indent="  ")  # 2 пробела для отступа
+
+        # # Заменяем XML-декларацию
+        # if pretty_xml.startswith('<?xml version="1.0" ?>'):
+        #     pretty_xml = pretty_xml.replace(
+        #         '<?xml version="1.0" ?>',
+        #         '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
+        #         1
+        #     )
+        # else:
+        #     # Если декларация отсутствует, добавляем новую
+        #     pretty_xml = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + pretty_xml
+
         with open(path, "w", encoding="utf-8") as f:
             f.write(xml_str)
 
+        return xml_str
 
+    def find_node_by_tag(self, G, find_tag):
+        """
+        Ищет уже существующие в графе узлы по заданному тегу
+        """
+        find_nodes = set()
+
+        for node in G.nodes():
+            label, tag = self.extract_label_and_tag(G, node)
+            if tag == find_tag:
+                find_nodes.add(node)
+
+        return list(find_nodes)
+
+
+    def load_graphml(self, path: str):
+        """
+        Загружает .graphml файл и возвращает объект Graph с узлами и рёбрами
+        с учётом пространств имён yEd/GraphML и лемматизации меток.
+        """
+        ET.register_namespace("", "http://graphml.graphdrawing.org/xmlns")
+        ET.register_namespace("y", "http://www.yworks.com/xml/graphml")
+        ns = {
+            "g": "http://graphml.graphdrawing.org/xmlns",
+            "y": "http://www.yworks.com/xml/graphml"
+        }
+
+        with open(path, 'r', encoding='utf-8') as f:
+            xml_text = f.read()
+
+        # Лемматизация названия вершин в графе согласно словарю
+        if not self.morph_analyzer is None:
+            # print("Nen")
+            def repl(match):
+                before, text, after = match.groups()
+                label, tag = self.split_by_bracket(text)
+
+                if not label or not tag:
+                    return match.group(0)
+
+                lemmatized = self.morph_analyzer.lemmatize_string(label)
+                return f"{before}{lemmatized}({tag}){after}"
+
+            xml_text = re.sub(
+                r'(<y:NodeLabel[^>]*>)(.*?)(</y:NodeLabel>)',
+                repl,
+                xml_text,
+                flags=re.DOTALL
+            )
+
+        root = ET.fromstring(xml_text)
+        graph_el = root.find("g:graph", ns)
+
+        G = nx.DiGraph()
+        id_map = {}  # оригинальный id → uuid
+
+        for node_el in graph_el.findall("g:node", ns):
+            node_id = node_el.get("id")
+            new_id = str(uuid.uuid4())  # новый уникальный id
+            id_map[node_id] = new_id
+
+            data_el = node_el.find("g:data[y:ShapeNode]", ns)
+            if data_el is None:
+                G.add_node(new_id)
+                continue
+
+            shape_el = data_el.find("y:ShapeNode", ns)
+            geom = shape_el.find("y:Geometry", ns)
+
+            x = float(geom.get("x", "0")) if geom is not None else 0.0
+            y = float(geom.get("y", "0")) if geom is not None else 0.0
+
+            label_el = shape_el.find("y:NodeLabel", ns)
+            label = label_el.text if label_el is not None else node_id
+
+            G.add_node(new_id, label=label, x=str(x), y=str(y))
+
+        for edge_el in graph_el.findall("g:edge", ns):
+            src = id_map.get(edge_el.get("source"))
+            tgt = id_map.get(edge_el.get("target"))
+            if src and tgt:
+                G.add_edge(src, tgt)
+
+        return G
 
 if __name__ == "__main__":
 
@@ -479,39 +605,48 @@ if __name__ == "__main__":
 
     process_graph = ProcessNxGraph(custom_morph)
 
-    G_lizinopril = process_graph.yEd2graph(file_lizinopril)
-    G_spironolacton = process_graph.yEd2graph(file_spironolacton)
+    G_lizinopril = process_graph.load_graphml(file_lizinopril)
+    G_spironolacton = process_graph.load_graphml(file_spironolacton)
 
-    # Этап 1
+    # # Этап 1
     G_lizinopril = process_graph.concat_hanging_act_mech(G_lizinopril)
     G_spironolacton = process_graph.concat_hanging_act_mech(G_spironolacton)
-    # Этап 2
+    process_graph.plot_graph(G_spironolacton)
+    # # Этап 2
     G_lizinopril = process_graph.remove_remaining_noun(G_lizinopril)
     G_spironolacton = process_graph.remove_remaining_noun(G_spironolacton)
-    # Этап 3 
+    process_graph.plot_graph(G_spironolacton)
+    # # Этап 3 
     G_lizinopril = process_graph.link_isolated_side_e(G_lizinopril)
     G_spironolacton = process_graph.link_isolated_side_e(G_spironolacton)
 
-    print("Main prepare G_lizinopril:", process_graph.find_main_prepare(G_lizinopril))
-    print("Main prepare G_spironolacton:", process_graph.find_main_prepare(G_spironolacton))
+    # print("Main prepare G_lizinopril:", process_graph.find_main_prepare(G_lizinopril))
+    # print("Main prepare G_spironolacton:", process_graph.find_main_prepare(G_spironolacton))
 
     DIR_TEST = "process_yEd_graph\\data\\test_graphs"
 
     process_graph.save_nxGraph_to_yEd(G_lizinopril, f"{DIR_TEST}\\lizinopril.graphml")
     process_graph.save_nxGraph_to_yEd(G_spironolacton, f"{DIR_TEST}\\spironolacton.graphml")
 
-    merged_graph = process_graph.merge_graphs([G_lizinopril, G_spironolacton])
+
+    # process_graph = ProcessNxGraph(custom_morph, flag_debag=True)
+
+    merged_graph = process_graph.merge_graph_list_by_label([G_lizinopril, G_spironolacton])
     process_graph.save_nxGraph_to_yEd(merged_graph, f"{DIR_TEST}\\merged_lizinopril_spironolacton.graphml")
 
-    G_1 = process_graph.yEd2graph(DIR_TEST+"\\test_merge_1.graphml")
-    G_2 = process_graph.yEd2graph(DIR_TEST+"\\test_merge_2.graphml")
+    # G_1 = process_graph.load_graphml(DIR_TEST+"\\test_merge_1.graphml")
+    # G_2 = process_graph.load_graphml(DIR_TEST+"\\test_merge_2.graphml")
 
-    merged_graph = process_graph.merge_graphs([G_1, G_2])
-    process_graph.save_nxGraph_to_yEd(merged_graph, f"{DIR_TEST}\\merged_1_2.graphml")
+    # merged_graph = process_graph.merge_graphs([G_1, G_2])
+    # process_graph.save_nxGraph_to_yEd(merged_graph, f"{DIR_TEST}\\merged_1_2.graphml")
 
-    # graph_test = process_graph.yEd2graph(DIR_TEST+"\\test_3_before.graphml")
+    # graph_test = process_graph.load_graphml(DIR_TEST+"\\test_4_before.graphml")
+    # graph_test = process_graph.merge_nodes_by_label(graph_test)
+    # graph_test = process_graph.link_isolated_side_e(graph_test)
+    # process_graph.plot_graph(graph_test)
     # process_graph.concat_hanging_act_mech(graph_test)
     # process_graph.remove_remaining_noun(graph_test)
     # process_graph.link_isolated_side_e(graph_test)
-    # process_graph.save_yEd(graph_test, f"{DIR_TEST}\\test_3_after.graphml")
+    # process_graph.plot_graph(graph_test)
+    # process_graph.save_nxGraph_to_yEd(graph_test, f"{DIR_TEST}\\test_4_after.graphml")
 

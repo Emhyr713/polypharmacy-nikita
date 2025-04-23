@@ -1,17 +1,31 @@
-/utils/__pycache__
-/.vscode
-/extract_text_from_instructions/data/Инструкции_txt
-/process_yEd_graph/data/graph_yEd_processed_1
-/process_yEd_graph/data/graph_yEd_raw_1
-/process_yEd_graph/data/graph_yEd_raw_2
+# Python cache
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE
+/.vscode/
+
+# Data directories
+/data/
+!/data/README.md  # сохраняет только README в data, если он нужен
+
+# Временные/обработанные данные
+/extract_text_from_instructions/data/Инструкции_txt/
+/process_yEd_graph/data/
+/parse_vigiaccess/data/
+/text_corpus_addiction/data/
+/make_side_effect_dataset/data/
+
+# Специфичные файлы/папки
 dedoc_OCR
-/data/Инструкции_ГРЛС_1
-/data/Инструкции_ГРЛС_2
-/data/Инструкции_ГРЛС_1_scan
-/data/Инструкции_ГРЛС_2_scan
 *.zip
-/convertors/__pycache__
-/process_yEd_graph/__pycache__
-/process_yEd_graph/data
-/data/downloaded
-/data/data_bio
+
+# Скачанные/бинарные данные
+/data/downloaded/
+/data/data_bio/
+/data/Инструкции_ГРЛС_*/
+/data/*_scan/
+
+# Драйверы и бинарные файлы
+/parse_vigiaccess/driver/
