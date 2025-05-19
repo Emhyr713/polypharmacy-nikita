@@ -29,3 +29,8 @@ dedoc_OCR
 
 # Драйверы и бинарные файлы
 /parse_vigiaccess/driver/
+/visualization_embedding/data
+/doccano/data
+/CustomPymorphy/__pycache__
+/CustomPymorphy/__pycache__
+/parse_vigiaccess/logs

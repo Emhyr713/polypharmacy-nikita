@@ -10,9 +10,11 @@ if __name__ == "__main__":
     # Инициализация директорий и файлов
     DIR_GRAPHS_INPUT = "process_yEd_graph\\data\\graph_yEd_raw_"
     DIR_GRAPHS_OUTPUT = "process_yEd_graph\\data\\graph_yEd_with_side_e_from_dataset_"
+    DIR_GRAPHS_OUTPUT_PROCESSED = "process_yEd_graph\\data\\graph_yEd_processed_"
     DIR_GRAPHS_OUTPUT_104 = "process_yEd_graph\\data\\graph_yEd_processed_104_"
     FILENAME_SIDE_E_DATASET = "make_side_effect_dataset\\data\\sef_dataset.json"
     FILENAME_SIDE_E_DICT = "make_side_effect_dataset\\data\\side_e_synonim_dict_all.json"
+
 
     # Смещение по оси х при добавлении в граф вершины
     X_SHIFT = 200
@@ -34,6 +36,7 @@ if __name__ == "__main__":
         currunt_dir_input = f"{DIR_GRAPHS_INPUT}{i+1}"
         currunt_dir_output = f"{DIR_GRAPHS_OUTPUT}{i+1}"
         currunt_dir_output_104 = f"{DIR_GRAPHS_OUTPUT_104}{i+1}"
+        currunt_dir_output_processed = f"{DIR_GRAPHS_OUTPUT_PROCESSED}{i+1}"
 
         for filename in os.listdir(currunt_dir_input):
             if not filename.endswith(".graphml"):
@@ -86,6 +89,8 @@ if __name__ == "__main__":
             # Устранение "служебных" noun
             G_yEd = process_graph.remove_remaining_noun(G_yEd)
 
+            process_graph.save_nxGraph_to_yEd(G_yEd, f"{currunt_dir_output_processed}\\{filename}")
+
             # Преобразование согласно словарю
             side_e_nodes = process_graph.find_node_by_tag(G_yEd, find_tag="side_e")
             for node in side_e_nodes:
@@ -96,5 +101,3 @@ if __name__ == "__main__":
             # Объединение дублирующихся вершин
             G_yEd = process_graph.merge_nodes_by_label(G_yEd)
             process_graph.save_nxGraph_to_yEd(G_yEd, f"{currunt_dir_output_104}\\{filename}")
-            # process_graph.load_graphml(f"{currunt_dir_output_104}\\{filename}")
-            process_graph.load_graphml(f"{currunt_dir_output}\\{filename}")

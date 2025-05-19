@@ -7,6 +7,8 @@ import xml.etree.ElementTree as ET
 from xml.dom import minidom
 sys.path.append("")
 
+from Parser import GraphParser
+
 from utils import yedLib
 
 from CustomPymorphy.CustomPymorphy import EnhancedMorphAnalyzer
@@ -427,7 +429,7 @@ class ProcessNxGraph():
         plt.tight_layout()
         plt.show()
 
-    def graph2json(self, G):
+    def graph2json(self, G, jsonpolina = True):
         """
         Обрабатывает граф в формате JSON.
         (проверить)
@@ -460,6 +462,10 @@ class ProcessNxGraph():
         # Преобразование в JSON-формат
         data = nx.node_link_data(G_for_json, edges="links")
         data["name"] = [G_for_json.nodes[prepare].get("name", "") for prepare in main_prepare]
+
+        if jsonpolina:
+            parser = GraphParser()
+            data = parser.jsonPolina(data)
 
         return data
     

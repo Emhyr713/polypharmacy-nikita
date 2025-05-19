@@ -135,17 +135,16 @@ def load_graph(filename: str):
 # Использование
 if __name__ == "__main__":
     a, b = 2,3
-    graph1 = load_graph(f"test_data\\drug_fozinopril.graphml")
-    graph2 = load_graph(f"test_data\\drug_ramipril.graphml")
+    graph1 = load_graph(f"data\\graph_yEd_processed_1\\drug_fozinopril.graphml")
+    graph2 = load_graph(f"data\\graph_yEd_processed_1\\drug_ramipril.graphml")
 
-    
     merger = GraphMerger(graph1, graph2)
     merged_graph = merger.merge()
     nx_merged_graph = merger.to_networkx()
     xml_str = graph2yEd(nx_merged_graph)
 
     # Записываем в файл
-    output_path = f"test_data\\merged_graph_fozinopril_ramipril"
+    output_path = f"process_yEd_graph\\data\\test_graphs\\merged_graph_fozinopril_ramipril"
     merger.save_to_file(f"{output_path}.json")
     with open(f"{output_path}.graphml", "w", encoding="utf-8") as f:
         f.write(xml_str)

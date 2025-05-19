@@ -47,6 +47,13 @@ class fetch_pdf_or_rlsnet_side_effects():
         text = re.sub(r',\s*$', '', text)
         text = re.sub(r'[^\S\n]+', ' ', text)
 
+        text = re.sub(r'‑', '-', text)
+        text = re.sub(r'\s*-\s*', '-', text)
+
+        result = re.sub(r'"([^"]*?)"', r'«\1»', text)  # Замена на кавычки ёлочки
+        result = re.sub(r'«\s*', r'«', text)
+        result = re.sub(r'\s*»', r'»', text)
+
         # Удаление строк короче 5 символов (не считая пробелы)
         lines = text.split('\n')
         lines = [line for line in lines if len(line.strip()) >= 5]
@@ -92,7 +99,7 @@ class fetch_pdf_or_rlsnet_side_effects():
     def _get_side_effects_instruction_text(self, extracted_text):
         """
         Извлечение главы с побочными эффектами из текста инструкции.
-        Работает только текстовыми pdf.Побочные действия
+        Работает только текстовыми .pdf Побочные действия
         """
         # Извлекаем текст после "Побочное действие" и до "Передозировка"
         match_side_e = re.search(
@@ -196,11 +203,12 @@ class fetch_pdf_or_rlsnet_side_effects():
                         sub_part = re.sub(r'\s*\d+[\;]?\s*$|[\;\s\)]+$', '', sub_part)
 
                         sub_part_list = [
-                            re.sub(r'\s*\d+$', '',  # Удаляем числа в конце
+                            re.sub(r'[\s:0-9]+$', '',  # Удаляем числа в конце
                                 re.sub(r'^[^a-zA-Zа-яА-ЯёЁ«»]+', '', item)  # Удаляем все не-буквы в начале
                             ).strip()
                             for item in re.split(r'[;,]\s*', sub_part)  # Разделяем по запятой и точке с запятой
-                            if item.strip() and not item.strip().isdigit() and not item.lstrip().startswith('в том числе')
+                            if item.strip() and not item.strip().isdigit()
+                            # and not item.lstrip().startswith('в том числе')
                         ]
 
                         sub_section_content[sub_section] = sub_part_list
@@ -284,7 +292,8 @@ class fetch_pdf_or_rlsnet_side_effects():
                         if frequency not in side_effects[current_category]:  
                             side_effects[current_category][frequency] = []
 
-                        effect_list = [translate(self.translate_dict, effect.strip()).lower() for effect in effects.split(",")]
+                        effect_list = [translate(self.translate_dict, effect.strip()).lower()
+                                       for effect in effects.split(",")]
 
                         side_effects[current_category][frequency].extend(effect_list)
 
@@ -337,7 +346,48 @@ class fetch_pdf_or_rlsnet_side_effects():
             for side_e in content['side_e_parts']:
                 uniq_set.add(custom_morph.lemmatize_string(side_e.lower()))
 
-        return sorted(uniq_set, key=len, reverse=True)
+        return sorted(uniq_set)
+    
+    @staticmethod
+    def post_processing(side_e_parts):
+        prefixes_to_remove = ["включая", "такие как", "в том числе"]
+        prefix_pattern = re.compile(
+            r",?\s*(?:" + "|".join(map(re.escape, prefixes_to_remove)) + r")\s+",
+            flags=re.IGNORECASE
+        )
+        lower_prefixes = [p.lower() for p in prefixes_to_remove]
+
+        def process_text(text):
+            if not text.strip():
+                return []
+            
+            # Разделяем текст по разделителям и обрабатываем каждую часть
+            parts = [part.strip() for part in prefix_pattern.split(text) if part.strip()]
+            
+            processed_parts = []
+            for part in parts:
+                first_word, *rest = part.split(maxsplit=1)
+                if first_word.lower() in lower_prefixes:
+                    if rest:
+                        processed_parts.append(rest[0])
+                else:
+                    processed_parts.append(part)
+            
+            return [p for p in processed_parts if p.strip()]
+        
+        result = {}
+        
+        for section, content in side_e_parts.items():
+            if isinstance(content, dict):
+                result[section] = {
+                    freq: [effect for text in effects for effect in process_text(text)]
+                    for freq, effects in content.items() 
+                    if effects
+                }
+            elif isinstance(content, list):
+                result[section] = [effect for text in content for effect in process_text(text)]
+                    
+        return result
     
     def convert_side_e(self, side_e_dataset):
         if self.synonim_dict is None:
@@ -448,6 +498,10 @@ if __name__ == "__main__":
         if not result["source"]:
             fetcher.ND_drug.append(drug_name_ru)
             print("Нет источника побочных эффектов:", drug_name_ru)
+
+        # Постобработка
+        else:
+            result["side_e_parts"] = fetcher.post_processing(result["side_e_parts"])
         
         side_e_dataset.append(result)
 

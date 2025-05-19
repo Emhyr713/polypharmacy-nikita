@@ -43,7 +43,7 @@ class Drug:
                         .replace('\u2060', '')
         
         # Ищем число в шаблоне: "There are <strong>55 324</strong> reports"
-        match = re.search(r"There are\s*<strong>([\d\s]+)</strong>\s*reports", text)
+        match = re.search(r"There (?:is|are)\s*<strong>([\d\s]+)</strong>\s*reports?", text)
         if match:
             number_str = match.group(1).replace(" ", "")
             try:

@@ -2,6 +2,7 @@ from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import PatternFill
 from parse_vigiaccess_html import Drug
+from datetime import datetime
 import csv
 import os
 
@@ -48,11 +49,12 @@ def get_side_e_set(drug_list):
 
     # Для каждого побочного эффекта уникальные подпобочные элементы
     for drug in drug_list:
-        for group_side_e in drug.group_side_e:
-            if group_side_e not in side_e_set:
-                side_e_set[group_side_e] = set()
-            for side_e in drug.group_side_e[group_side_e]["side_e_dict"]:
-                side_e_set[group_side_e].add(side_e)
+        if drug.group_side_e:
+            for group_side_e in drug.group_side_e:
+                if group_side_e not in side_e_set:
+                    side_e_set[group_side_e] = set()
+                for side_e in drug.group_side_e[group_side_e]["side_e_dict"]:
+                    side_e_set[group_side_e].add(side_e)
 
     return side_e_set
 
@@ -83,10 +85,17 @@ def save_to_excel(drug_list, side_e_set, output_filename):
     for group in sorted(side_e_set):
         fill_cell(sheet, effect_row, 1)
         set_bold_text(sheet, effect_row, 1, group)
-        effect_row += 1
+        
+        for i in range(len(drug_list)):
+            fill_cell(sheet, effect_row, i+2)
+            set_bold_text(sheet, effect_row, i+2, 0)
 
+        effect_row += 1
         for sub_effect in sorted(side_e_set[group]):
             sheet.cell(row=effect_row, column=1, value=sub_effect)
+
+            for i in range(len(drug_list)):
+                sheet.cell(row=effect_row, column=i+2, value=0)
             effect_row += 1
 
     # Препараты
@@ -97,6 +106,12 @@ def save_to_excel(drug_list, side_e_set, output_filename):
         sheet.cell(row=ROW_NAME_RU, column=col, value=drg.name_ru)
         sheet.cell(row=ROW_NAME_EN, column=col, value=drg.name_en)
         sheet.cell(row=ROW_REPORT_COUNT, column=col, value=drg.report_count)
+
+        if drg.name_ru == "Риамиловир":
+            print("drg.report_count:", drg.report_count)
+        
+        if not drg.group_side_e:
+            continue
 
         # Возраст
         fill_cell(sheet, ROW_AGE_START - 1, col)
@@ -148,20 +163,21 @@ if __name__ == "__main__":
         drug_name_en = drug_row.get('drug_name_en', '').strip()
 
         file_path = f"{DIR_SOURCE_HTML}\\all_html_{drug_name_en}.html"
+        drug_obj = Drug(drug_name_ru, drug_name_en)
         if os.path.exists(file_path):
             with open(file_path, 'r', encoding='utf-8') as file:
                 html_content = file.read()
                 
-            drug_obj = Drug(drug_name_ru, drug_name_en)
+            
             drug_obj.parse_vigiaccess_html(html_content)
 
             drug_list.append(drug_obj)
         else:
             print(f"⚠️ Файл не найден: {file_path}")
-
-
+            drug_list.append(drug_obj)
 
     # Поиск уникальных побочек
     side_e_set = get_side_e_set(drug_list)
-    save_to_excel(drug_list, side_e_set, "parse_vigiaccess\\data\\test_excel.xlsx")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_to_excel(drug_list, side_e_set, f"parse_vigiaccess\\data\\Vigiaccess_{timestamp}.xlsx")
 

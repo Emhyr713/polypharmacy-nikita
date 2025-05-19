@@ -56,10 +56,14 @@ if __name__ == "__main__":
                                for node in side_e_nodes])
             
             
-    print("len(side_e_in_graphs)", len(side_e_in_graphs))
+    print("len(side_e_in_graphs)", len(set(side_e_in_graphs)))
     # print("len(side_e_in_graphs-writed_side_e)", len(side_e_in_graphs-writed_side_e))
             
     uniq_list = (uniq_list | set(side_e_in_graphs)) - writed_side_e
     filepath = "make_side_effect_dataset\\data\\sef_uniq_list_1.txt"
     with open(filepath, "w", encoding="utf-8") as file:
         file.write("\n".join(sorted(uniq_list)))
+
+    filepath = "make_side_effect_dataset\\data\\all_side_e.txt"
+    with open(filepath, "w", encoding="utf-8") as file:
+        file.write("\n".join(sorted((uniq_list | set(side_e_in_graphs) | writed_side_e))))
