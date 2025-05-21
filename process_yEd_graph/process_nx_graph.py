@@ -51,13 +51,19 @@ class ProcessNxGraph():
         if type_message != "DEBAG" or self.flag_debag:
             print(f"     {type_message}:{message}")
 
-    def extract_label_and_tag(self, G, node):
+    def extract_label_and_tag(self, G, node_id):
         """
         Отделение от названия узла сущность и её тег
         """
-        node_label = G.nodes[node].get('label', node)
+        node_label = G.nodes[node_id].get('label', node_id)
         return self.split_by_bracket(node_label)
     
+    def get_label(G, node_id):
+        """
+        Получение label
+        """
+        return G.nodes[node_id].get('label', node_id)
+
     def find_prepare_nodes(self, G):
         """
         Поиск ЛС в графе
@@ -531,6 +537,23 @@ class ProcessNxGraph():
                 find_nodes.add(node)
 
         return list(find_nodes)
+    
+    def convert_side_e_by_dict(self, G, side_e_dict):
+        map_side_e_dict = {side_e:side_e_104
+                            for side_e_104, side_e_list in side_e_dict.items()
+                            for side_e in side_e_list}
+
+        # Преобразование согласно словарю
+        side_e_nodes = self.find_node_by_tag(G, find_tag="side_e")
+        for node in side_e_nodes:
+            label, _ = self.extract_label_and_tag(G, node)
+            new_label = map_side_e_dict.get(label, label)
+            G.nodes[node]["label"] = f"{new_label}(side_e)"
+
+        # Объединение дублирующихся вершин
+        G = self.merge_nodes_by_label(G)
+
+        return G
 
 
     def load_graphml(self, path: str):

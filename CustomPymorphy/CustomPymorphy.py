@@ -41,12 +41,14 @@ REVERSE_HTML_ENTITIES = {v: k for k, v in HTML_ENTITIES.items()}
 
 def protect_html_entities(text):
     for k, v in HTML_ENTITIES.items():
-        text = text.replace(k, v)
+        if text:
+            text = text.replace(k, v)
     return text
 
 def restore_html_entities(text):
     for k, v in REVERSE_HTML_ENTITIES.items():
-        text = text.replace(k, v)
+        if text:
+            text = text.replace(k, v)
     return text
 
 class EnhancedMorphAnalyzer:
@@ -89,12 +91,15 @@ class EnhancedMorphAnalyzer:
     def lemmatize_string(self, text):
         """Лемматизирует текст с сохранением html-сущностей."""
         text = protect_html_entities(text)  # Сначала прячем &gt;, &amp; и т.п.
-        
-        words = re.findall(r'\w+|[^\w\s]', text)
-        lemmatized = [self.parse(word)[0].normal_form for word in words]
-        result = normalize_text(' '.join(lemmatized))
 
-        result = restore_html_entities(result)  # Возвращаем сущности обратно
+        if text:
+            words = re.findall(r'\w+|[^\w\s]', text)
+            lemmatized = [self.parse(word)[0].normal_form for word in words]
+            result = normalize_text(' '.join(lemmatized))
+
+            result = restore_html_entities(result)  # Возвращаем сущности обратно
+        else:
+            return text
         return result
 
 class EnhancedParse:
