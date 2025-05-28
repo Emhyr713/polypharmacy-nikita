@@ -1,4 +1,5 @@
 import pandas as pd
+import math
 
 def preprocess_side_e_dict(df):
     """Создание словаря для побочных эффектов"""
@@ -30,7 +31,7 @@ def get_freq_side_by_drug(df):
     return drug_dict
 
 def calculate_weights(df_blank, side_dict, drug_dict):
-    print("drug_dict", sorted(drug_dict.keys()))
+    # print("drug_dict", sorted(drug_dict.keys()))
     for row_idx in range(len(df_blank)):
         if row_idx < 3:  # Пропускаем заголовки
             continue
@@ -55,10 +56,13 @@ def calculate_weights(df_blank, side_dict, drug_dict):
 
             rank = side_dict[side_e_eng]
             freq = drug_data.get(side_e_eng, "???") 
-            if '?' in str(freq):
+            if '???' in str(freq):
                 df_blank.at[row_idx, col_idx] = '???'
             else:
-                df_blank.at[row_idx, col_idx] = freq * rank / total
+                # df_blank.at[row_idx, col_idx] = freq * rank / total
+                # df_blank.at[row_idx, col_idx] = 1.5*math.log(1 + math.sqrt((freq * rank) / total))
+                # df_blank.at[row_idx, col_idx] = math.sqrt(freq * rank / total)
+                df_blank.at[row_idx, col_idx] = round((freq * rank / total)**(2/5), 2) if freq and total else 0
 
     return df_blank
 
@@ -77,5 +81,5 @@ if __name__ == "__main__":
     df_result = calculate_weights(df_blank, side_e_dict, drug_dict)
 
     # Сохраняем обратно в Excel
-    file_path_res = 'parse_vigiaccess\\data\\Список побочных эффектов edit.xlsx'
+    file_path_res = 'parse_vigiaccess\\data\\Список побочных эффектов edit_1.xlsx'
     df_result.to_excel(file_path_res, index=False, header=False)
