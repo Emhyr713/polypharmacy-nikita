@@ -3,7 +3,7 @@ import os
 import sys
 sys.path.append("")
 
-from extract_text_from_instructions.export_text_from_instructions import extract_text_pdf
+from extract_data_from_instructions.extract_text_from_instructions import extract_text_pdf
 from utils.split_sent_razdel import split_format_text
 
 DIR_LIST_PDF = [

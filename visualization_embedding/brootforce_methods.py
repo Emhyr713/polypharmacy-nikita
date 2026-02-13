@@ -1,11 +1,9 @@
 import json
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
-import os
+
 from itertools import product
 from tqdm import tqdm
 
-from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 from sklearn.metrics import davies_bouldin_score
 import numpy as np
@@ -16,244 +14,8 @@ from dimensional_reduct import TSNEStrategy, TSNEExactStrategy, UMAPStrategy, PC
 from cluster_strategy import DBSCANStrategy, KMeansStrategy, AgglomerativeStrategy, ClusteringStrategy, HDBSCANStrategy
 from visualization_strategy import MatplotlibVisualization, PlotlyVisualization, VisualizationStrategy
 
-class ClusterSaver:
-    @staticmethod
-    def generate_filename(  reduction_method: str, 
-                            clustering_method: str,
-                            n_clusters: int,
-                            base_dir: str = "data") -> str:
-        """Генерирует имя файла на основе параметров кластеризации"""
-        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{reduction_method}_{clustering_method}_clusters{n_clusters}_.json"
-        os.makedirs(base_dir, exist_ok=True)
-        return os.path.join(base_dir, filename)
+import visualization_embedding.EmbeddingProcessor as EmbeddingProcessor
 
-    @staticmethod
-    def save_clustering_results(
-        embeddings: np.ndarray,
-        labels: List[str],
-        clusters: np.ndarray,
-        reduction_params: Dict[str, Any],
-        clustering_params: Dict[str, Any],
-        reduction_method: str,
-        clustering_method: str,
-        save_dir: str = "results"
-    ) -> str:
-        """
-        Сохраняет результаты кластеризации и возвращает путь к файлу
-        
-        :return: Путь к сохраненному файлу
-        """
-        # Генерируем имя файла
-        n_clusters = len(np.unique(clusters))
-        filename = ClusterSaver.generate_filename(
-            reduction_method=reduction_method,
-            clustering_method=clustering_method,
-            n_clusters=n_clusters,
-            base_dir=save_dir
-        )
-        
-        results = {
-            "metadata": {
-                "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
-                "reduction_method": reduction_method,
-                "clustering_method": clustering_method,
-                "num_clusters": len(np.unique(clusters)),
-                "num_points": len(embeddings),
-                "embedding_dim": embeddings.shape[1]
-            },
-            "parameters": {
-                "reduction": reduction_params,
-                "clustering": clustering_params
-            },
-            "clusters": {
-                f"cluster_{int(cluster_num)}": {
-                    "count": int(np.sum(clusters == cluster_num)),
-                    "labels": [
-                        label
-                        for label, cluster in zip(labels, clusters)
-                        if cluster == cluster_num
-                    ],
-                }
-                for cluster_num in np.unique(clusters)
-            }
-        }
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(results, f, indent=4, ensure_ascii=False)
-        
-        return filename
-
-
-# 4. Класс для работы с эмбеддингами
-class EmbeddingVisualizer:
-    def __init__(self, 
-                 reduction_strategy: 'DimensionalityReductionStrategy',
-                 clustering_strategy: 'ClusteringStrategy',
-                 visualization_strategy: 'VisualizationStrategy',
-                #  primary_reduction_strategy: 'DimensionalityReductionStrategy' = None
-                 ):
-        """
-        Оптимизированный визуализатор эмбеддингов с поддержкой d_mas векторов
-        
-        Параметры:
-            reduction_strategy: Стратегия уменьшения размерности
-            clustering_strategy: Стратегия кластеризации
-            visualization_strategy: Стратегия визуализации
-            # primary_reduction_strategy: Опциональная первичная стратегия уменьшения размерности
-        """
-        # self.primary_reduction_strategy = primary_reduction_strategy
-        self.reduction_strategy = reduction_strategy
-        self.clustering_strategy = clustering_strategy
-        self.visualization_strategy = visualization_strategy
-
-    def load_data(self, file_path: str) -> Dict[str, Any]:
-        """Загрузка данных из JSON файла с обработкой ошибок"""
-        try:
-            with open(file_path, "r", encoding="utf-8") as file:
-                return json.load(file)
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            raise ValueError(f"Ошибка загрузки данных: {str(e)}")
-
-    def _validate_inputs(self, embeddings: np.ndarray, section_ids: List[int], num_sections: int):
-        """Валидация входных данных для d_mas"""
-        if len(embeddings) != len(section_ids):
-            raise ValueError("Количество эмбеддингов и section_ids должно совпадать")
-        if num_sections <= 0:
-            raise ValueError("num_sections должно быть положительным числом")
-        if not all(0 <= sid < num_sections for sid in section_ids):
-            raise ValueError(f"Все section_ids должны быть в диапазоне [0, {num_sections})")
-
-    def add_one_hot(
-            self,
-            embeddings: np.ndarray,
-            section_list: List[str],
-            active_value: float = 6.0,
-            inactive_value: float = 0.0,
-            normalize: bool = True
-        ) -> np.ndarray:
-        """
-        Оптимизированное добавление one-hot векторов секций
-        
-        Параметры:
-            embeddings: Исходные эмбеддинги (n_samples, n_features)
-            section_list: Список секций в соответсвии с эмбеддингом
-            num_sections: Общее количество секций
-            active_value: Значение активной секции
-            inactive_value: Значение неактивных секций
-            normalize: Нормализовать ли данные
-        
-        Возвращает:
-            Расширенные эмбеддинги (n_samples, n_features + num_sections)
-        """
-
-        # Создаем one-hot векторы
-        _, sections = np.unique(section_list, return_inverse=True)  # sections содержит индексы 0..N-1
-        one_hot = np.full((len(embeddings), sections.max()+1), inactive_value, dtype=np.float32)
-        one_hot[np.arange(len(embeddings)), sections] = active_value
-        
-        # Объединяем
-        result = np.concatenate([embeddings, one_hot], axis=1)
-
-        # section_ids = [idx for idx in range(len(section_list))]
-        # num_sections = max(section_ids) + 1
-
-        # self._validate_inputs(embeddings, section_ids, num_sections)
-        
-        # # Создание one-hot векторов с использованием advanced indexing
-        # d_mas_vectors = np.zeros((len(embeddings), num_sections))
-        # d_mas_vectors[np.arange(len(embeddings)), section_ids] = active_value
-        
-        # # Объединение массивов без копирования исходных данных
-        # extended_embeddings = np.concatenate(
-        #     [embeddings, d_mas_vectors],
-        #     axis=1,
-        #     dtype=np.float32  # Используем float32 для экономии памяти
-        # )
-        
-        # if normalize:
-        #     # Оптимизированная нормализация за один проход
-        #     scaler = StandardScaler()
-        #     extended_embeddings = scaler.fit_transform(extended_embeddings)
-        
-        return result
-
-    def load_data(self, data: Dict[str, Any]) -> Tuple[np.ndarray, List[str]]:
-        """
-        Создание списков с данными
-        
-        Параметры:
-            data: Словарь с данными
-            add_d_mas: Добавлять ли d_mas векторы
-        
-        Возвращает:
-            Кортеж (эмбеддинги, список меток)
-        """
-        # Векторизованное извлечение данных
-        word_list = list(data.keys())
-        embeddings = np.array([item["embedding"] for item in data.values()])
-        section_list = np.array([item["section"] for item in data.values()])
-               
-        return embeddings, word_list, section_list
-
-    def process_embedding(
-            self, 
-            json_file: dict, 
-            title: str = "Embedding Visualization",
-            save_results: bool = True,
-            visualize: bool = True,
-            save_dir: str = "data"
-        ) -> Optional[str]:
-        """
-        Оптимизированный пайплайн визуализации
-        
-        Параметры:
-            json_file: Входные данные
-            title: Заголовок визуализации
-            save_results: Сохранять результаты
-            save_dir: Директория для сохранения
-        
-        Возвращает:
-            Путь к сохранённому файлу или None
-        """
-        # Обработка данных
-        embeddings, labels, section_list = self.load_data(json_file)
-        print("self.reduction_strategy:", self.reduction_strategy)
-        emb_reduce = self.reduction_strategy.reduce_dimensions(embeddings)
-        emb_reduce_one_hot = self.add_one_hot(embeddings=emb_reduce, section_list=section_list)
-        cluster_reduce_one_hot = self.clustering_strategy.cluster(emb_reduce_one_hot)
-
-        # Для визуализации
-        vis_emb = self.reduction_strategy.reduce_dimensions(emb_reduce_one_hot)
-        
-        if visualize:
-            figure = self.visualization_strategy.visualize(vis_emb, labels, cluster_reduce_one_hot, title)
-            self.visualization_strategy.save_visualize(
-                                                    reduction_method=self.reduction_strategy.__class__.__name__,
-                                                    clustering_method=self.clustering_strategy.__class__.__name__, 
-                                                    clusters=cluster_reduce_one_hot,
-                                                    fig = figure
-                                                )
-
-        # Метрики кластеризации
-        # print(f"original emb silhouette score {silhouette_score(embeddings, clusters)}")
-        # print(f"primary reduction emb silhouette score {silhouette_score(primary_reduce_embeddings, clusters)}")
-        # if self.primary_reduction_strategy:
-        #     print(f"secondary reduction emb silhouette score {silhouette_score(secondary_reduce_embeddings, clusters)}")
-        
-        if save_results:
-            return ClusterSaver.save_clustering_results(
-                embeddings=emb_reduce_one_hot,
-                labels=labels,
-                clusters=cluster_reduce_one_hot,
-                reduction_params=self.reduction_strategy.__dict__,
-                clustering_params=self.clustering_strategy.__dict__,
-                reduction_method=self.reduction_strategy.__class__.__name__,
-                clustering_method=self.clustering_strategy.__class__.__name__,
-                save_dir=save_dir
-            )
-        return None
-    
 def evaluate_combination(visualizer, original_emb, section_list, labels, reduction_strategy, clustering_strategy):
     """Вычисляет метрики для одной комбинации параметров"""
     # Сценарий 1: Добавление вектора, снижение размерности, кластеризация
@@ -318,8 +80,8 @@ def evaluate_combination(visualizer, original_emb, section_list, labels, reducti
     }
 
 def grid_search_embeddings_parallel(
-        visualizer: EmbeddingVisualizer,
-        json_dict: Dict[str, Any],
+        visualizer: EmbeddingProcessor,
+        original_emb, labels, section_list,
         param_grid: Dict[str, List[Any]],
         n_jobs: int = -1
     ) -> Tuple[List[Dict[str, Any]], int]:
@@ -330,7 +92,7 @@ def grid_search_embeddings_parallel(
         n_jobs: количество рабочих процессов (-1 для использования всех ядер)
     """
     # Загрузка данных один раз
-    original_emb, labels, section_list = visualizer.load_data(json_dict)
+    # original_emb, labels, section_list = visualizer.load_data(json_dict)
     
     # Генерация всех комбинаций параметров
     combinations = list(product(param_grid['reduction'], param_grid['clustering']))
@@ -345,9 +107,11 @@ def grid_search_embeddings_parallel(
     
     return results, len(original_emb[0])    
 
-
-
 def plot_sorted_score_histograms(namefile, data_list, top_n=7):
+    """
+    Отрисовка гистограмм с метриками
+    """
+
     # Разворачиваем данные: создаём отдельные записи для каждой стратегии
     flattened_data = []
     for data in data_list:
@@ -448,7 +212,7 @@ if __name__ == "__main__":
         
         # Создание базового визуализатора
         visualization_strategy = PlotlyVisualization()
-        visualizer = EmbeddingVisualizer(
+        visualizer = EmbeddingProcessor(
             primary_reduction_strategy=None,
             reduction_strategy=UMAPStrategy(n_components=2),
             clustering_strategy=HDBSCANStrategy(),
@@ -487,10 +251,13 @@ if __name__ == "__main__":
                 # DBSCANStrategy(eps=5, min_samples=3)
             ]
         }
-        
+
+        # Получение данных из словаря
+        embeddings, labels, section_list = visualizer.load_data_from_json(json_dict)
         # Запуск перебора параметров
-        results, emb_dim = grid_search_embeddings_parallel(visualizer, json_dict, param_grid, n_jobs=-1)
-        # results, emb_dim = grid_search_embeddings(visualizer, json_dict, param_grid)
+        results, emb_dim = grid_search_embeddings_parallel(visualizer, embeddings,
+                                                           labels, section_list,
+                                                           param_grid, n_jobs=-1)
         
         # Вывод лучших результатов
         print("\nTop combinations by final silhouette score:")
@@ -551,42 +318,3 @@ if __name__ == "__main__":
                     f.write(f"  {k}: {v}\n")
                 
                 f.write("\n")
-    
-
-# 4. Пример использования
-# if __name__ == "__main__":
-#     # Конфигурация
-#     # EMB_SIDE_E_JSON = "visualization_embedding\\data\\filled_embedding_blank_nodes.json"
-#     # EMB_SIDE_E_JSON = "visualization_embedding\\data\\embedding_blank_nodes2_med_embeddings_model_rubert-tiny.json"
-#     EMB_SIDE_E_JSON = "visualization_embedding\\data\\embedding_blank_nodes2_med_embeddings_model_all_MiniLM_L6_v2.json"
-
-#     SAVE_DIR = "visualization_embedding\\data\\clustered"
-
-#     with open(EMB_SIDE_E_JSON, "r", encoding = "utf-8") as file:
-#         json_dict = json.load(file)["side_effects"]
-
-#     # Выбор стратегий
-#     primary_reduction_strategy = TSNEExactStrategy(n_components=50,  random_state=42)
-#     reduction_strategy = TSNEStrategy(n_components=2, random_state=42)
-#     # reduction_strategy = PCAStrategy(n_components=2)
-#     clustering_strategy = DBSCANStrategy(eps=5, min_samples=3)    
-#     # clustering_strategy = KMeansStrategy(n_clusters=104)
-
-#     # clustering_strategy = AgglomerativeStrategy(n_clusters=250)    
-#     visualization_strategy = PlotlyVisualization()                  
-    
-#     # Создание и использование визуализатора
-#     visualizer = EmbeddingVisualizer(
-#         primary_reduction_strategy=primary_reduction_strategy,
-#         reduction_strategy=reduction_strategy,
-#         clustering_strategy=clustering_strategy,
-#         visualization_strategy=visualization_strategy
-#     )
-
-#     result_file = visualizer.visualize_embeddings(
-#         json_file=json_dict,
-#         title="Drug Clustering",
-#         save_results=True,
-#         save_dir=SAVE_DIR
-#     )
-#     # visualizer.visualize_embeddings(EMB_SIDE_E_JSON, "Drug Side Effects Embeddings with Clustering")

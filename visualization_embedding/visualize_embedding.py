@@ -1,9 +1,9 @@
 import json
 
-from dimensional_reduct import TSNEStrategy, TSNEExactStrategy, UMAPStrategy, PCAStrategy, DimensionalityReductionStrategy
-from cluster_strategy import DBSCANStrategy, KMeansStrategy, AgglomerativeStrategy, ClusteringStrategy, HDBSCANStrategy
-from visualization_strategy import MatplotlibVisualization, PlotlyVisualization, VisualizationStrategy
-from brootforce_methods import EmbeddingVisualizer
+import dimensional_reduct #import TSNEStrategy, TSNEExactStrategy, UMAPStrategy, PCAStrategy, DimensionalityReductionStrategy
+import cluster_strategy #import DBSCANStrategy, KMeansStrategy, AgglomerativeStrategy, ClusteringStrategy, HDBSCANStrategy
+import visualization_strategy #import MatplotlibVisualization, PlotlyVisualization, VisualizationStrategy
+from visualization_embedding.EmbeddingProcessor import EmbeddingProcessor
 
 # 4. Пример использования
 if __name__ == "__main__":
@@ -20,12 +20,15 @@ if __name__ == "__main__":
         json_dict = json.load(file)["side_effects"]
 
     # Выбор стратегий
-    reduction_strategy = UMAPStrategy(n_components=2, n_neighbors=10, min_dist=0.1, metric='cosine')
-    clustering_strategy = AgglomerativeStrategy(n_clusters=200)
-    visualization_strategy = PlotlyVisualization()                  
+    reduction_strategy = dimensional_reduct.UMAPStrategy(n_components=2,
+                                                         n_neighbors=10,
+                                                         min_dist=0.1,
+                                                         metric='cosine')
+    clustering_strategy = cluster_strategy.AgglomerativeStrategy(n_clusters=200)
+    visualization_strategy = visualization_strategy.PlotlyVisualization()                  
     
     # Создание и использование визуализатора
-    visualizer = EmbeddingVisualizer(
+    visualizer = EmbeddingProcessor(
         reduction_strategy=reduction_strategy,
         clustering_strategy=clustering_strategy,
         visualization_strategy=visualization_strategy

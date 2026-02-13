@@ -5,6 +5,7 @@ from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
 from sklearn.preprocessing import normalize
 from sklearn.metrics.pairwise import cosine_distances
 import hdbscan
+from sklearn.metrics.pairwise import cosine_similarity
 
 class ClusteringStrategy(ABC):
     @abstractmethod
@@ -138,6 +139,67 @@ class HDBSCANStrategy(ClusteringStrategy):
         return {
             'min_cluster_size': self.min_cluster_size,
             'metric': self.metric,
+        }
+
+class SimilarityThresholdClustering(ClusteringStrategy):
+    """
+    Кластеризация на основе порога сходства (по косинусной близости).
+    Группирует термины в кластеры, если их сходство >= threshold.
+    Использует агломеративную логику через граф связей.
+    """
+    def __init__(self, threshold: float = 0.90):
+        """
+        :param threshold: порог сходства (от 0 до 1)
+        """
+        self.threshold = threshold
+
+    def cluster(self, embeddings: np.ndarray) -> np.ndarray:
+        """
+        Кластеризация по порогу сходства.
+        :param embeddings: np.ndarray формы (n_samples, n_features)
+        :return: np.ndarray с метками кластеров
+        """
+        n = embeddings.shape[0]
+        if n == 0:
+            return np.array([])
+        if n == 1:
+            return np.array([0])
+
+        # Вычисляем матрицу косинусного сходства
+        sim_matrix = cosine_similarity(embeddings)
+        
+        visited = np.zeros(n, dtype=bool)
+        labels = np.full(n, -1, dtype=int)  # метки кластеров
+        cluster_id = 0
+
+        for i in range(n):
+            if visited[i]:
+                continue
+
+            # Начинаем новый кластер
+            cluster = []
+            stack = [i]
+
+            while stack:
+                idx = stack.pop()
+                if not visited[idx]:
+                    visited[idx] = True
+                    cluster.append(idx)
+                    # Находим всех, кто ещё не посещён и чьё сходство >= threshold
+                    for j in range(n):
+                        if not visited[j] and sim_matrix[idx, j] >= self.threshold:
+                            stack.append(j)
+
+            # Присваиваем всем в кластере одинаковую метку
+            if cluster:
+                labels[cluster] = cluster_id
+                cluster_id += 1
+
+        return labels
+
+    def get_params(self):
+        return {
+            'threshold': self.threshold
         }
     
     

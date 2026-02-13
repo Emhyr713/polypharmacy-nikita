@@ -92,8 +92,10 @@ def get_text_from_rlsnet(url):
 if __name__ == "__main__":
     CSV_FILENAME = "text_corpus_addiction/data/rlsnet_links.csv"
     OUTPUT_FILENAME = "text_corpus_addiction/data/rlsnet_texts.json"
+    TXT_OUTPUT_FILENAME = "text_corpus_addiction/data/rlsnet_texts.txt"  # Общий TXT файл
 
     results = []
+    full_text_lines = []  # Сюда будем собирать строки для общего .txt
 
     with open(CSV_FILENAME, 'r', encoding="utf-8") as csvfile:
         # Считываем первую строку вручную и нормализуем заголовки
@@ -107,11 +109,20 @@ if __name__ == "__main__":
             if drug_name and link:
                 text = get_text_from_rlsnet(link)
                 if text:
+                    # Сохраняем в JSON как список строк
                     results.append({drug_name: text.split("\n")})
+                    # Добавляем в общий TXT файл
+                    full_text_lines.append(text)
                 else:
                     results.append({drug_name: None})
 
+    # Сохраняем JSON
     with open(OUTPUT_FILENAME, 'w', encoding="utf-8") as outfile:
         json.dump(results, outfile, ensure_ascii=False, indent=2)
 
+    # Сохраняем общий TXT
+    with open(TXT_OUTPUT_FILENAME, 'w', encoding="utf-8") as txtfile:
+        txtfile.write("\n".join(full_text_lines))
+
     print(f"Результаты сохранены в {OUTPUT_FILENAME}")
+    print(f"Общий текстовый файл сохранён в {TXT_OUTPUT_FILENAME}")

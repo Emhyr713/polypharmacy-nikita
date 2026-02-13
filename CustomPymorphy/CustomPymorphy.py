@@ -122,6 +122,9 @@ if __name__ == "__main__":
     custom_morph = EnhancedMorphAnalyzer()
 
     # Тест
-    print(custom_morph.parse("Каптоприлом")[0].normal_form)  # Пользовательский результат
+    print(custom_morph.parse("Каптоприлом")[0].normal_form) 
     print(custom_morph.parse("Каптоприла")[0].normal_form)
-    print(custom_morph.parse("Каптоприлу")[0].normal_form)  # Результат pymorphy3
+    print(custom_morph.parse("Каптоприлу")[0].normal_form)
+
+    print(custom_morph.parse("желудочно-кишечное кровотечение")[0].normal_form)
+    print(custom_morph.parse("изосорбида динитрат")[0].normal_form)

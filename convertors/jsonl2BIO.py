@@ -393,7 +393,7 @@ def prepare_file(file_path):
     return res_total
 
 # Пути (непутю)
-version = "7_wo_Lizilnop_Spironol"
+version = "7_spironolacton"
 # Входные данные
 file_path = f"data\\data_bio\\data_{version}.jsonl"
 

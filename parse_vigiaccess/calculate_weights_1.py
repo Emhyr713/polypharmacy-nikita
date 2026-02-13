@@ -171,6 +171,6 @@ if __name__ == "__main__":
     analyzer = SideEffectAnalyzer(
         blank_file='parse_vigiaccess/data/blank.xlsx',
         dataset_file='parse_vigiaccess/data/Vigiaccess_20250515_000505.xlsx',
-        output_file='parse_vigiaccess/data/Список побочных эффектов edit_2.xlsx'
+        output_file='parse_vigiaccess/data/Список побочных эффектов sqrt5_2_orig.xlsx'
     )
     analyzer.run()

@@ -25,7 +25,7 @@ def bio2html(input_file, output_file):
     with open(output_file, 'w', encoding='utf-8') as file:
         file.write(data_html)
 
-bio_file = "data\\dowloaded\\output.json"
-svg_file = "data\\dowloaded\\spironolacton_lizinopril.html"
+bio_file = "data\\data_bio\\data_bio_7_spironolacton.json"
+svg_file = "data\\data_bio\\spironolacton.html"
 if __name__ == "__main__":
     bio2html(bio_file, svg_file)

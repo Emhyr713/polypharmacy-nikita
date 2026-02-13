@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 from xml.dom import minidom
 sys.path.append("")
 
-from Parser import GraphParser
+from process_yEd_graph.Parser import GraphParser
 
 from utils import yedLib
 
@@ -20,16 +20,18 @@ class ProcessNxGraph():
                    'prot_link', 'mechanism', 'metabol', 'hormone',
                    'side_e', 'prepare', 'distribution']
 
-    def __init__(self, morph_analyzer = custom_morph, side_e_dict = None, flag_debag = False):
+    def __init__(self, morph_analyzer = custom_morph,
+                 side_e_dict = None, flag_debag = False):
         self.morph_analyzer = morph_analyzer
         self.flag_debag = flag_debag
         
-        self.nodes_set = set()
-        self.edges_set = set()
+        # self.nodes_set = set()
+        # self.edges_set = set()
 
         self.map_side_e_dict = None
         if side_e_dict:
-            self.map_side_e_dict = {side_e:side_104 for side_104, side_e in side_e_dict}
+            self.map_side_e_dict = {side_e:side_e_valid
+                                    for side_e_valid, side_e in side_e_dict}
 
     @classmethod
     def get_tags_list(cls):
@@ -192,7 +194,9 @@ class ProcessNxGraph():
             children = list(G.successors(node))
 
             if node_tag is None:
-                self.print_message(f"Node:{node}, Node_name:{node_name}, Node_tag:{node_tag} is NONE", "WARNING")
+                self.print_message(f"Node:{node},"
+                                   f" Node_name:{node_name},"
+                                   f" Node_tag:{node_tag} is NONE", "WARNING")
                         
             for child in children:
                 # child_label = G.nodes[child].get('label',node)
@@ -230,36 +234,57 @@ class ProcessNxGraph():
         return G
     
 
-    def collect_nodes_edges(self, G):
+    def collect_nodes_edges(self, G, join_tag=True):
         """
         Сохнанить уникальные узлы и связи
         """
+        nodes_set = set()
+        edges_set = set()
 
-        main_prepare = self.find_main_prepare(G)
+        main_prepare = self.find_prepare_nodes(G)
             
         # По всем узлам графа
         for node in G.nodes():
             label, tag = self.extract_label_and_tag(G, node)
 
             if tag not in ProcessNxGraph.get_tags_list():
-                self.print_message(f"label:{label}, tag:{tag}, prepare:{main_prepare}", "INVALID TAG")
+                self.print_message(f"label:{label}, tag:{tag},"
+                                   f" prepare:{main_prepare}", "INVALID TAG")
                 continue
 
-            if tag != "side_e" and not list(G.predecessors(node)) and not list(G.successors(node)):
-                self.print_message(f"label:{label}, tag:{tag}, prepare:{main_prepare}", "INVALID NODE")
+            if (tag != "side_e"
+                and not list(G.predecessors(node))
+                and not list(G.successors(node))):
+                self.print_message(f"label:{label}, tag:{tag},"
+                                   f" prepare:{main_prepare}", "INVALID NODE")
                 continue
-
-            self.nodes_set.add((label, tag))
+            
+            # Сохранить в одной строке или нет
+            if join_tag:
+                nodes_set.add(f"{label}({tag})")
+            else:
+                nodes_set.add((label, tag))
 
         # По всем рёбрам
         for target, source in G.edges():
             label_t, tag_t = self.extract_label_and_tag(G, target)
             label_s, tag_s = self.extract_label_and_tag(G, source)
 
-            if tag_t in ProcessNxGraph.get_tags_list() and tag_s in ProcessNxGraph.get_tags_list():
-                self.edges_set.add((f"{label_t}({tag_t})", f"{label_s}({tag_s})"))
+            # Если теги валидны
+            if (    tag_t in ProcessNxGraph.get_tags_list()
+                and tag_s in ProcessNxGraph.get_tags_list()):
 
-        return self.nodes_set, self.edges_set
+                # Сохранить в одной строке или нет
+                if join_tag:
+                    edges_set.add((f"{label_t}({tag_t})", f"{label_s}({tag_s})"))
+                else:
+                    edges_set.add((label_t, tag_t, label_s, tag_s))
+            else:
+                self.print_message(f"Узлы {(label_t, tag_t)} или {(label_s, tag_s)}"
+                                   f" имеют невалидные теги.",
+                                   type_message="INVALID TAG")
+
+        return nodes_set, edges_set
     
 
     def link_isolated_side_e(self, G):
@@ -286,7 +311,6 @@ class ProcessNxGraph():
     def replacing_side_e_with_dict(self, G):
         """
         Замена побочек на побочки из словаря
-        (Проверить)
         """
 
         if self.map_side_e_dict is None:
@@ -435,11 +459,18 @@ class ProcessNxGraph():
         plt.tight_layout()
         plt.show()
 
-    def graph2json(self, G, jsonpolina = True):
+    def graph2json(self, G, jsonpolina=True, lemmatize_nodes=True):
         """
         Обрабатывает граф в формате JSON.
         (проверить)
         """
+
+        try:
+            cycle = nx.find_cycle(G, orientation="original")
+            return None
+        except nx.NetworkXNoCycle:
+            pass  # Циклов нет, всё ок
+
         
         main_prepare = []           # Список узлов с тегом 'prepare', связанных с 'group'
         mapping = {}                # Сопоставление старых узлов с новыми UUID
@@ -451,12 +482,13 @@ class ProcessNxGraph():
             mapping[node] = new_id
             
             node_name, node_tag = self.extract_label_and_tag(G, node)
-            if self.morph_analyzer:
+            if self.morph_analyzer and lemmatize_nodes:
                 node_name = self.morph_analyzer.lemmatize_string(node_name)
             
             G_for_json.add_node(new_id, name=node_name, label=node_tag, weight=5)
             
-            if any(self.extract_label_and_tag(G, p)[1] == 'group' for p in G.predecessors(node)) and node_tag == 'prepare':
+            if any(self.extract_label_and_tag(G, p)[1] == 'group'
+                   for p in G.predecessors(node)) and node_tag == 'prepare':
                 main_prepare.append(new_id)
                 
         # Добавление рёбер между узлами, используя новые UUID
@@ -506,20 +538,6 @@ class ProcessNxGraph():
 
         xml_str = graph_yed.get_graph()
 
-        # parsed = minidom.parseString(xml_str)
-        # pretty_xml = parsed.toprettyxml(indent="  ")  # 2 пробела для отступа
-
-        # # Заменяем XML-декларацию
-        # if pretty_xml.startswith('<?xml version="1.0" ?>'):
-        #     pretty_xml = pretty_xml.replace(
-        #         '<?xml version="1.0" ?>',
-        #         '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
-        #         1
-        #     )
-        # else:
-        #     # Если декларация отсутствует, добавляем новую
-        #     pretty_xml = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + pretty_xml
-
         with open(path, "w", encoding="utf-8") as f:
             f.write(xml_str)
 
@@ -527,28 +545,53 @@ class ProcessNxGraph():
 
     def find_node_by_tag(self, G, find_tag):
         """
-        Ищет уже существующие в графе узлы по заданному тегу
+        Ищет уже существующие в графе узлы по заданному тегу или списку тегов
+        
+        Параметры:
+        ----------
+        G : nx.Graph
+            Граф для поиска
+        find_tag : str or list
+            Тег или список тегов для поиска
+            
+        Возвращает:
+        -----------
+        list
+            Список узлов, содержащих указанный тег(и)
         """
         find_nodes = set()
-
+        
+        # Преобразуем входной параметр в список, если это строка
+        if isinstance(find_tag, str):
+            find_tag = [find_tag]
+        
         for node in G.nodes():
-            label, tag = self.extract_label_and_tag(G, node)
-            if tag == find_tag:
+            _, tag = self.extract_label_and_tag(G, node)
+            if tag in find_tag:
                 find_nodes.add(node)
-
+        
         return list(find_nodes)
     
-    def convert_side_e_by_dict(self, G, side_e_dict):
-        map_side_e_dict = {side_e:side_e_104
-                            for side_e_104, side_e_list in side_e_dict.items()
-                            for side_e in side_e_list}
-
+    def convert_synonim_word_by_dict(self, G, convert_dict, find_tag, lemmatize=True):
+        if lemmatize:
+            map_side_e_dict = {self.morph_analyzer.lemmatize_string(raw_word): collective_word
+                            for collective_word, raw_word_list in convert_dict.items()
+                            for raw_word in raw_word_list}
+        else:
+            map_side_e_dict = {raw_word: collective_word
+                            for collective_word, raw_word_list in convert_dict.items()
+                            for raw_word in raw_word_list}
+        
         # Преобразование согласно словарю
-        side_e_nodes = self.find_node_by_tag(G, find_tag="side_e")
+        side_e_nodes = self.find_node_by_tag(G, find_tag=find_tag)
         for node in side_e_nodes:
-            label, _ = self.extract_label_and_tag(G, node)
-            new_label = map_side_e_dict.get(label, label)
-            G.nodes[node]["label"] = f"{new_label}(side_e)"
+            label, tag = self.extract_label_and_tag(G, node)
+            if lemmatize:
+                normalized_label = self.morph_analyzer.lemmatize_string(label)
+            else:
+                normalized_label = label
+            new_label = map_side_e_dict.get(normalized_label, normalized_label)
+            G.nodes[node]["label"] = f"{new_label}({tag})"
 
         # Объединение дублирующихся вершин
         G = self.merge_nodes_by_label(G)
@@ -556,7 +599,7 @@ class ProcessNxGraph():
         return G
 
 
-    def load_graphml(self, path: str):
+    def load_graphml(self, path: str, lemmatize = True):
         """
         Загружает .graphml файл и возвращает объект Graph с узлами и рёбрами
         с учётом пространств имён yEd/GraphML и лемматизации меток.
@@ -572,7 +615,7 @@ class ProcessNxGraph():
             xml_text = f.read()
 
         # Лемматизация названия вершин в графе согласно словарю
-        if not self.morph_analyzer is None:
+        if not self.morph_analyzer is None and lemmatize:
             # print("Nen")
             def repl(match):
                 before, text, after = match.groups()
@@ -625,6 +668,85 @@ class ProcessNxGraph():
                 G.add_edge(src, tgt)
 
         return G
+    
+    def check_graph_cycles(self, graph: nx.DiGraph, verbose: bool = True) -> bool:
+        """
+        Проверяет, содержит ли граф циклы. При необходимости логирует все найденные циклы.
+
+        :param graph: Направленный граф NetworkX (DiGraph).
+        :param verbose: Если True, выводит информацию о всех циклах.
+        :return: True, если в графе есть хотя бы один цикл, иначе False.
+        """
+        if not graph or len(graph.nodes) == 0:
+            self.print_message("Граф пуст. Циклов нет.", "INFO")
+            return False
+
+        try:
+            # Получаем все простые циклы
+            cycle_generator = nx.simple_cycles(graph)
+            cycles = list(cycle_generator)
+
+            if not cycles:
+                self.print_message("✅ Граф ациклический (DAG).", "INFO")
+                return False
+
+            if verbose:
+                self.print_message(f"⚠️ Найдено циклов: {len(cycles)}", "WARNING")
+                for i, cycle in enumerate(cycles, 1):
+                    # Преобразуем UUID узлов в читаемые метки: "Label(Tag)"
+                    labeled_path = []
+                    for node_id in cycle:
+                        label, tag = self.extract_label_and_tag(graph, node_id)
+                        labeled_path.append(f"{label}({tag})")
+                    cycle_str = " → ".join(labeled_path)
+                    self.print_message(f"Цикл {i}: {cycle_str}", "INFO")
+
+            return True
+
+        except Exception as e:
+            self.print_message(f"Ошибка при проверке циклов: {e}", "ERROR")
+            return False
+        
+    def delete_by_label_tag(self, G: nx.DiGraph, label_tag_list):
+        """
+        Удаление вершин определённых в label_tag_list: [(label, tag), (), ...]
+        """
+
+        nodes_to_remove = set() # Список на удаление
+
+        for node_id in list(G.nodes):
+            label, tag = self.extract_label_and_tag(G, node_id)
+            if (label, tag) not in label_tag_list:
+                continue
+
+            children = list(G.successors(node_id))
+            parents = list(G.predecessors(node_id))
+
+            if tag is None:
+                self.print_message(f"Node:{node_id},"
+                                   f"Node_name:{label},"
+                                   f"Node_tag:{tag} is NONE",
+                                   "WARNING"
+                                   )
+                
+            # "Наследование" связей от текущего обрабатываемого узла                   
+            for child in children:
+                for parent in parents:
+                    if not G.has_edge(parent, child):
+                        G.add_edge(parent, child)
+
+            # Добавление в список удаления
+            nodes_to_remove.add(node_id)  
+
+        self.print_message(f"nodes_to_remove: {nodes_to_remove}")
+        # Удаление узлов после завершения обработки
+        for remove_node in nodes_to_remove:
+            if remove_node in G:
+                print(f"Node {G.nodes[remove_node].get('label',remove_node)} has been removed.")
+                G.remove_node(remove_node)
+        
+        return G
+
 
 if __name__ == "__main__":
 
@@ -649,8 +771,6 @@ if __name__ == "__main__":
     G_lizinopril = process_graph.link_isolated_side_e(G_lizinopril)
     G_spironolacton = process_graph.link_isolated_side_e(G_spironolacton)
 
-    # print("Main prepare G_lizinopril:", process_graph.find_main_prepare(G_lizinopril))
-    # print("Main prepare G_spironolacton:", process_graph.find_main_prepare(G_spironolacton))
 
     DIR_TEST = "process_yEd_graph\\data\\test_graphs"
 
@@ -663,19 +783,4 @@ if __name__ == "__main__":
     merged_graph = process_graph.merge_graph_list_by_label([G_lizinopril, G_spironolacton])
     process_graph.save_nxGraph_to_yEd(merged_graph, f"{DIR_TEST}\\merged_lizinopril_spironolacton.graphml")
 
-    # G_1 = process_graph.load_graphml(DIR_TEST+"\\test_merge_1.graphml")
-    # G_2 = process_graph.load_graphml(DIR_TEST+"\\test_merge_2.graphml")
-
-    # merged_graph = process_graph.merge_graphs([G_1, G_2])
-    # process_graph.save_nxGraph_to_yEd(merged_graph, f"{DIR_TEST}\\merged_1_2.graphml")
-
-    # graph_test = process_graph.load_graphml(DIR_TEST+"\\test_4_before.graphml")
-    # graph_test = process_graph.merge_nodes_by_label(graph_test)
-    # graph_test = process_graph.link_isolated_side_e(graph_test)
-    # process_graph.plot_graph(graph_test)
-    # process_graph.concat_hanging_act_mech(graph_test)
-    # process_graph.remove_remaining_noun(graph_test)
-    # process_graph.link_isolated_side_e(graph_test)
-    # process_graph.plot_graph(graph_test)
-    # process_graph.save_nxGraph_to_yEd(graph_test, f"{DIR_TEST}\\test_4_after.graphml")
 
